@@ -59,11 +59,12 @@ app.post('/api/chat', async (req, res) => {
   const { messages, session_id = 'default' } = req.body
   
   const lastMsg = messages[messages.length - 1]
-  await supabase.from('messages').insert({
+  const { error: insertErr } = await supabase.from('messages').insert({
     session_id,
     role: lastMsg.role,
     content: lastMsg.content
   })
+if (insertErr) console.log('SUPABASE INSERT ERROR:', insertErr.message)
 
   try {
     res.setHeader('Content-Type', 'text/event-stream')
