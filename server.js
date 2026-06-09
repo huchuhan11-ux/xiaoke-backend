@@ -101,3 +101,36 @@ if (insertErr) console.log('SUPABASE INSERT ERROR:', insertErr.message)
 app.listen(3001, () => {
   console.log('后端跑起来了 port 3001')
 })
+
+app.get('/api/diary', async (req, res) => {
+  const { data, error } = await supabase
+    .from('diary')
+    .select('*, diary_comments(*)')
+    .order('created_at', { ascending: false })
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+app.post('/api/diary', async (req, res) => {
+  const { content } = req.body
+  const { data, error } = await supabase
+    .from('diary')
+    .insert({ content })
+    .select()
+    .single()
+  if (error) return res.status(500).json({ error: error.message })
+  
+  const comment = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 512,
+    system: BASE_SYSTEM + memoryCache + '\n\n小好刚写了一篇日记，你读完了，留一段评论。真实的反应，不要太长。',
+    messages: [{ role: 'user', content }]
+  })
+  
+  await supabase.from('diary_comments').insert({
+    diary_id: data.id,
+    content: comment.content[0].text
+  })
+  
+  res.json({ ok: true })
+})
