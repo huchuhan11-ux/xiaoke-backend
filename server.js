@@ -1,5 +1,3 @@
-cd ~/xiaokeHome/backend
-cat > server.js << 'EOF'
 const express = require('express')
 const cors = require('cors')
 const Anthropic = require('@anthropic-ai/sdk')
@@ -66,4 +64,3 @@ app.post('/api/chat', async (req, res) => {
 app.listen(3001, () => {
   console.log('后端跑起来了 port 3001')
 })
-EOF
