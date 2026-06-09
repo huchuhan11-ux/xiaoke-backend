@@ -1,4 +1,3 @@
-cat > server.js << 'ENDOFFILE'
 const express = require('express')
 const cors = require('cors')
 const Anthropic = require('@anthropic-ai/sdk')
@@ -122,4 +121,3 @@ app.post('/api/diary', async (req, res) => {
 app.listen(3001, () => {
   console.log('后端跑起来了 port 3001')
 })
-ENDOFFILE
