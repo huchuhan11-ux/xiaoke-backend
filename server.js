@@ -231,4 +231,18 @@ app.delete('/api/countdowns/:id', async (req, res) => {
   res.json({ ok: true })
 })
 
+// ── 热力图数据 ──
+app.get('/api/stats/heatmap', async (req, res) => {
+  const { data, error } = await supabase
+    .from('messages')
+    .select('created_at')
+  if (error) return res.status(500).json({ error: error.message })
+  const counts = {}
+  data.forEach(m => {
+    const date = m.created_at.split('T')[0]
+    counts[date] = (counts[date] || 0) + 1
+  })
+  res.json(counts)
+})
+
 app.listen(3001, () => { console.log('后端跑起来了 port 3001') })
