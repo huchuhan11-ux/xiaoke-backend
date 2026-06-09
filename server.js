@@ -18,16 +18,14 @@ let lastFetch = 0
 async function fetchMemory() {
   try {
     const res = await notion.search({
-      filter: { object: 'page' },
       query: '',
-      page_size: 10
+      filter: { value: 'page', property: 'object' },
+      page_size: 20
     })
     const items = res.results
-      .filter(p => p.object === 'page' && p.properties)
+      .filter(p => p.properties && p.properties['标题'])
       .map(p => {
-        const title = p.properties['标题']?.title?.[0]?.plain_text
-          || p.properties['Name']?.title?.[0]?.plain_text
-          || ''
+        const title = p.properties['标题']?.title?.[0]?.plain_text || ''
         const summary = p.properties['一句话摘要']?.rich_text?.[0]?.plain_text || ''
         return title ? `· ${title}${summary ? '：' + summary : ''}` : null
       })
@@ -35,7 +33,7 @@ async function fetchMemory() {
       .join('\n')
     memoryCache = items ? `\n\n【我们的记忆】\n${items}` : ''
     lastFetch = Date.now()
-    console.log('记忆读取成功')
+    console.log('记忆读取成功', items ? '有内容' : '空')
   } catch (e) {
     console.log('记忆读取失败', e.message)
   }
