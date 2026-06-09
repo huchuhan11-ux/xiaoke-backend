@@ -27,11 +27,22 @@ let lastFetch = 0
 
 async function fetchMemory() {
   try {
-    const res = await notion.databases.query({
-      database_id: 'fe71f7c7-11da-40fe-b9d1-2a57ed3e10fa',
-      sorts: [{ property: '日期', direction: 'descending' }],
+    const response = await notion.databases.query({
+      database_id: 'fe71f7c711da40feb9d12a57ed3e10fa',
+      sorts: [{ timestamp: 'created_time', direction: 'descending' }],
       page_size: 10
     })
+    const items = response.results.map(p => {
+      const title = p.properties['标题']?.title?.[0]?.plain_text || ''
+      const summary = p.properties['一句话摘要']?.rich_text?.[0]?.plain_text || ''
+      return `· ${title}${summary ? '：' + summary : ''}`
+    }).join('\n')
+    memoryCache = items ? `\n\n【我们的记忆】\n${items}` : ''
+    lastFetch = Date.now()
+  } catch (e) {
+    console.log('记忆读取失败', e.message)
+  }
+}
     const items = res.results.map(p => {
       const title = p.properties['标题']?.title?.[0]?.plain_text || ''
       const summary = p.properties['一句话摘要']?.rich_text?.[0]?.plain_text || ''
@@ -50,13 +61,24 @@ app.post('/api/chat', async (req, res) => {
   if (Date.now() - lastFetch > 30 * 60 * 1000) fetchMemory()
   const { messages } = req.body
   try {
-    const response = await client.messages.create({
+    res.setHeader('Content-Type', 'text/event-stream')
+    res.setHeader('Cache-Control', 'no-cache')
+    res.setHeader('Connection', 'keep-alive')
+
+    const stream = await client.messages.stream({
       model: 'claude-sonnet-4-6',
       max_tokens: 1024,
       system: BASE_SYSTEM + memoryCache,
       messages
     })
-    res.json({ content: response.content[0].text })
+
+    for await (const chunk of stream) {
+      if (chunk.type === 'content_block_delta' && chunk.delta?.text) {
+        res.write(`data: ${JSON.stringify({ text: chunk.delta.text })}\n\n`)
+      }
+    }
+    res.write('data: [DONE]\n\n')
+    res.end()
   } catch (e) {
     res.status(500).json({ error: e.message })
   }
