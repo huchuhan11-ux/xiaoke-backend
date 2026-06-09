@@ -167,11 +167,40 @@ app.get('/api/board', async (req, res) => {
   res.json(data)
 })
 
+// 小克主动留言（必须在 /:id/comments 之前）
+app.post('/api/board/message', async (req, res) => {
+  if (Date.now() - lastFetch > 30 * 60 * 1000) fetchMemory()
+  try {
+    const aiMsg = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 256,
+      system: BASE_SYSTEM + memoryCache,
+      messages: [{ role: 'user', content: '在留言板给我留一条话。' }]
+    })
+    const content = aiMsg.content[0].text
+    const { data, error } = await supabase.from('board_posts').insert({ role: 'assistant', content }).select().single()
+    if (error) return res.status(500).json({ error: error.message })
+    res.json({ ...data, board_comments: [] })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// 小好发留言，小克自动回复
 app.post('/api/board', async (req, res) => {
-  const { role, content } = req.body
-  const { data, error } = await supabase.from('board_posts').insert({ role, content }).select().single()
+  const { content } = req.body
+  const { data, error } = await supabase.from('board_posts').insert({ role: 'user', content }).select().single()
   if (error) return res.status(500).json({ error: error.message })
-  res.json({ ...data, board_comments: [] })
+  const aiReply = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 256,
+    system: BASE_SYSTEM + memoryCache,
+    messages: [{ role: 'user', content: `小好在留言板写了：${content}\n\n你回一句。` }]
+  })
+  const aiContent = aiReply.content[0].text
+  const { data: comment } = await supabase.from('board_comments')
+    .insert({ post_id: data.id, role: 'assistant', content: aiContent }).select().single()
+  res.json({ ...data, board_comments: [comment] })
 })
 
 app.post('/api/board/:id/comments', async (req, res) => {
