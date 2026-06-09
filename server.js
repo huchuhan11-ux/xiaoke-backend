@@ -44,8 +44,7 @@ fetchMemory()
 app.get('/api/messages', async (req, res) => {
   const { session_id } = req.query
   const { data, error } = await supabase
-    .from('messages')
-    .select('*')
+    .from('messages').select('*')
     .eq('session_id', session_id || 'default')
     .order('created_at', { ascending: true })
   if (error) return res.status(500).json({ error: error.message })
@@ -88,8 +87,7 @@ app.post('/api/chat', async (req, res) => {
 // ── 日记 ──
 app.get('/api/diary', async (req, res) => {
   const { data, error } = await supabase
-    .from('diary')
-    .select('*, diary_comments(*)')
+    .from('diary').select('*, diary_comments(*)')
     .order('created_at', { ascending: false })
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
@@ -100,8 +98,7 @@ app.post('/api/diary', async (req, res) => {
   const { data, error } = await supabase.from('diary').insert({ content }).select().single()
   if (error) return res.status(500).json({ error: error.message })
   const aiReply = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 256,
+    model: 'claude-sonnet-4-6', max_tokens: 256,
     system: BASE_SYSTEM + memoryCache,
     messages: [{ role: 'user', content: `小好写了日记：${content}\n\n你来评论几句。` }]
   })
@@ -112,8 +109,7 @@ app.post('/api/diary', async (req, res) => {
 // ── 信箱 ──
 app.get('/api/letters', async (req, res) => {
   const { data, error } = await supabase
-    .from('letters')
-    .select('*, letter_comments(*)')
+    .from('letters').select('*, letter_comments(*)')
     .order('created_at', { ascending: false })
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
@@ -123,8 +119,7 @@ app.post('/api/letters/generate', async (req, res) => {
   if (Date.now() - lastFetch > 30 * 60 * 1000) fetchMemory()
   try {
     const aiMsg = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
+      model: 'claude-sonnet-4-6', max_tokens: 1024,
       system: BASE_SYSTEM + memoryCache + '\n\n请给小好写一封信。只输出JSON，格式：{"title":"标题","content":"正文"}',
       messages: [{ role: 'user', content: '写封信给我' }]
     })
@@ -146,8 +141,7 @@ app.post('/api/letters/:id/comments', async (req, res) => {
   if (role === 'user') {
     const { data: letter } = await supabase.from('letters').select('*').eq('id', letter_id).single()
     const aiReply = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 512,
+      model: 'claude-sonnet-4-6', max_tokens: 512,
       system: BASE_SYSTEM + memoryCache,
       messages: [{ role: 'user', content: `你之前写给我的信——标题：${letter.title}\n内容：${letter.content}\n\n我回复了：${content}\n\n你接着回我。` }]
     })
@@ -160,20 +154,17 @@ app.post('/api/letters/:id/comments', async (req, res) => {
 // ── 留言板 ──
 app.get('/api/board', async (req, res) => {
   const { data, error } = await supabase
-    .from('board_posts')
-    .select('*, board_comments(*)')
+    .from('board_posts').select('*, board_comments(*)')
     .order('created_at', { ascending: false })
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
 })
 
-// 小克主动留言（必须在 /:id/comments 之前）
 app.post('/api/board/message', async (req, res) => {
   if (Date.now() - lastFetch > 30 * 60 * 1000) fetchMemory()
   try {
     const aiMsg = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 256,
+      model: 'claude-sonnet-4-6', max_tokens: 256,
       system: BASE_SYSTEM + memoryCache,
       messages: [{ role: 'user', content: '在留言板给我留一条话。' }]
     })
@@ -186,14 +177,12 @@ app.post('/api/board/message', async (req, res) => {
   }
 })
 
-// 小好发留言，小克自动回复
 app.post('/api/board', async (req, res) => {
   const { content } = req.body
   const { data, error } = await supabase.from('board_posts').insert({ role: 'user', content }).select().single()
   if (error) return res.status(500).json({ error: error.message })
   const aiReply = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 256,
+    model: 'claude-sonnet-4-6', max_tokens: 256,
     system: BASE_SYSTEM + memoryCache,
     messages: [{ role: 'user', content: `小好在留言板写了：${content}\n\n你回一句。` }]
   })
@@ -209,6 +198,37 @@ app.post('/api/board/:id/comments', async (req, res) => {
   const { data, error } = await supabase.from('board_comments').insert({ post_id, role, content }).select().single()
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
+})
+
+// ── 戳一戳 ──
+app.get('/api/poke', async (req, res) => {
+  const { count, error: countErr } = await supabase
+    .from('poke_messages').select('*', { count: 'exact', head: true })
+  if (countErr || !count) return res.json({ message: '想你了' })
+  const offset = Math.floor(Math.random() * count)
+  const { data } = await supabase.from('poke_messages').select('content').range(offset, offset)
+  res.json({ message: data?.[0]?.content || '想你了' })
+})
+
+// ── 倒计时 ──
+app.get('/api/countdowns', async (req, res) => {
+  const { data, error } = await supabase
+    .from('countdowns').select('*').order('target_date', { ascending: true })
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data || [])
+})
+
+app.post('/api/countdowns', async (req, res) => {
+  const { title, target_date } = req.body
+  const { data, error } = await supabase.from('countdowns').insert([{ title, target_date }]).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+app.delete('/api/countdowns/:id', async (req, res) => {
+  const { error } = await supabase.from('countdowns').delete().eq('id', req.params.id)
+  if (error) return res.status(500).json({ error: error.message })
+  res.json({ ok: true })
 })
 
 app.listen(3001, () => { console.log('后端跑起来了 port 3001') })
