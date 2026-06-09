@@ -1,3 +1,4 @@
+cat > server.js << 'ENDOFFILE'
 const express = require('express')
 const cors = require('cors')
 const Anthropic = require('@anthropic-ai/sdk')
@@ -57,15 +58,8 @@ app.get('/api/messages', async (req, res) => {
 app.post('/api/chat', async (req, res) => {
   if (Date.now() - lastFetch > 30 * 60 * 1000) fetchMemory()
   const { messages, session_id = 'default' } = req.body
-  
   const lastMsg = messages[messages.length - 1]
-  const { error: insertErr } = await supabase.from('messages').insert({
-    session_id,
-    role: lastMsg.role,
-    content: lastMsg.content
-  })
-if (insertErr) console.log('SUPABASE INSERT ERROR:', insertErr.message)
-
+  await supabase.from('messages').insert({ session_id, role: lastMsg.role, content: lastMsg.content })
   try {
     res.setHeader('Content-Type', 'text/event-stream')
     res.setHeader('Cache-Control', 'no-cache')
@@ -76,7 +70,6 @@ if (insertErr) console.log('SUPABASE INSERT ERROR:', insertErr.message)
       system: BASE_SYSTEM + memoryCache,
       messages
     })
-    
     let fullContent = ''
     for await (const chunk of stream) {
       if (chunk.type === 'content_block_delta' && chunk.delta?.text) {
@@ -84,22 +77,12 @@ if (insertErr) console.log('SUPABASE INSERT ERROR:', insertErr.message)
         res.write(`data: ${JSON.stringify({ text: chunk.delta.text })}\n\n`)
       }
     }
-    
-    await supabase.from('messages').insert({
-      session_id,
-      role: 'assistant',
-      content: fullContent
-    })
-    
+    await supabase.from('messages').insert({ session_id, role: 'assistant', content: fullContent })
     res.write('data: [DONE]\n\n')
     res.end()
   } catch (e) {
     res.status(500).json({ error: e.message })
   }
-})
-
-app.listen(3001, () => {
-  console.log('后端跑起来了 port 3001')
 })
 
 app.get('/api/diary', async (req, res) => {
@@ -119,18 +102,24 @@ app.post('/api/diary', async (req, res) => {
     .select()
     .single()
   if (error) return res.status(500).json({ error: error.message })
-  
-  const comment = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 512,
-    system: BASE_SYSTEM + memoryCache + '\n\n小好刚写了一篇日记，你读完了，留一段评论。真实的反应，不要太长。',
-    messages: [{ role: 'user', content }]
-  })
-  
-  await supabase.from('diary_comments').insert({
-    diary_id: data.id,
-    content: comment.content[0].text
-  })
-  
+  try {
+    const comment = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 512,
+      system: BASE_SYSTEM + memoryCache + '\n\n小好刚写了一篇日记，你读完了，留一段评论。真实的反应，不要太长。',
+      messages: [{ role: 'user', content }]
+    })
+    await supabase.from('diary_comments').insert({
+      diary_id: data.id,
+      content: comment.content[0].text
+    })
+  } catch (e) {
+    console.log('评论生成失败', e.message)
+  }
   res.json({ ok: true })
 })
+
+app.listen(3001, () => {
+  console.log('后端跑起来了 port 3001')
+})
+ENDOFFILE
