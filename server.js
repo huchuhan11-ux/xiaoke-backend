@@ -94,8 +94,8 @@ app.get('/api/diary', async (req, res) => {
 })
 
 app.post('/api/diary', async (req, res) => {
-  const { content } = req.body
-  const { data, error } = await supabase.from('diary').insert({ content }).select().single()
+  const { content, mood } = req.body
+  const { data, error } = await supabase.from('diary').insert({ content, mood: mood || '' }).select().single()
   if (error) return res.status(500).json({ error: error.message })
   const aiReply = await client.messages.create({
     model: 'claude-sonnet-4-6', max_tokens: 256,
