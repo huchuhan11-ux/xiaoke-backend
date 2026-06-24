@@ -209,7 +209,8 @@ async function streamClaude(prompt, systemAppend, onDelta) {
   return new Promise((resolve, reject) => {
     const child = spawn('claude', cliBuildArgs(prompt, systemAppend, true), {
       cwd: PROJECT_ROOT,
-      env: cliBuildEnv()
+      env: cliBuildEnv(),
+      stdio: ['ignore', 'pipe', 'pipe']
     })
     let fullText = ''
     child.stdout.on('data', chunk => {
@@ -242,7 +243,8 @@ async function askClaude(prompt, systemAppend) {
   return new Promise((resolve, reject) => {
     const child = spawn('claude', cliBuildArgs(prompt, systemAppend, false), {
       cwd: PROJECT_ROOT,
-      env: cliBuildEnv()
+      env: cliBuildEnv(),
+      stdio: ['ignore', 'pipe', 'pipe']
     })
     let out = ''
     child.stdout.on('data', d => { out += d.toString() })
