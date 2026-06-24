@@ -154,10 +154,34 @@ body {
 }
 
 .inputarea {
-  padding: 14px 20px 28px;
+  padding: 10px 20px 28px;
   border-top: 0.5px solid rgba(192,139,114,0.18);
   flex-shrink: 0;
 }
+
+.model-toggle-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.model-pill {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 3px 10px;
+  border-radius: 20px;
+  border: 1px solid rgba(192,139,114,0.3);
+  background: transparent;
+  color: #b09a8a;
+  cursor: pointer;
+}
+.model-pill.active {
+  background: #c08b72;
+  border-color: #c08b72;
+  color: #fff;
+}
+.dark .model-pill { border-color: rgba(201,162,39,0.3); color: #9a8a5a; }
+.dark .model-pill.active { background: #c9a227; border-color: #c9a227; color: #1a1208; }
 
 .editing-banner {
   display: flex;
@@ -1066,7 +1090,24 @@ button {
   margin-top: 2px;
 }
 
-/* dual-city weather card */
+/* dual-city horizontal weather card */
+.hv2-bc-wx2h {
+  display: flex;
+  flex-direction: row;
+  padding: 0 !important;
+  overflow: hidden;
+}
+.hv2-wx2h-item {
+  flex: 1;
+  padding: 14px 12px 12px;
+}
+.hv2-wx2h-sep {
+  border-left: 0.5px solid rgba(192,139,114,0.18);
+}
+.dark .hv2-wx2h-sep { border-color: rgba(201,162,39,0.15); }
+.hv2-bc-temp-sm { font-size: 22px !important; }
+
+/* legacy dual-city stacked (kept for compat) */
 .hv2-bc-wx2 { display: flex; flex-direction: column; justify-content: space-between; }
 .hv2-wx2-sep {
   margin-top: 8px;
@@ -1437,6 +1478,7 @@ button {
   flex-direction: column;
   align-items: center;
   gap: 6px;
+  margin-top: 16px;
 }
 
 .home-poke-msg {
@@ -2024,25 +2066,47 @@ button.diary-mood-btn {
   margin-top: 4px;
 }
 
-.settings-usage-unit {
-  font-size: 10px;
-  color: #b09a8a;
-  margin-top: 2px;
+.su-list {
+  margin: 4px 0 0;
 }
-
-.settings-usage-note {
+.su-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 0.5px solid rgba(192,139,114,0.12);
+}
+.su-label {
+  font-size: 13px;
+  color: #6b5242;
+}
+.su-val {
+  font-size: 13px;
+  font-weight: 500;
+  color: #c08b72;
+}
+.su-badge {
   font-size: 11px;
-  color: #b09a8a;
-  text-align: center;
-  padding: 12px 16px 0;
+  font-weight: 600;
+  background: rgba(192,139,114,0.1);
+  border: 1px solid rgba(192,139,114,0.25);
+  border-radius: 20px;
+  padding: 3px 10px;
+  color: #c08b72;
 }
 
+.dark .su-row { border-color: rgba(201,162,39,0.1); }
+.dark .su-label { color: #c8b898; }
+.dark .su-val { color: #e8d5a3; }
+.dark .su-badge { background: rgba(201,162,39,0.1); border-color: rgba(201,162,39,0.2); color: #c9a227; }
+.dark .hv2-bc-wxmeta { color: #7a6a4a; }
+
+/* legacy usage styles kept for compat */
+.settings-usage-unit { font-size: 10px; color: #b09a8a; margin-top: 2px; }
+.settings-usage-note { font-size: 11px; color: #b09a8a; text-align: center; padding: 12px 16px 0; }
 .dark .settings-usage-item { background: rgba(201,162,39,0.08); }
 .dark .settings-usage-num { color: #e8d5a3; }
 .dark .settings-usage-lbl { color: #9a8a5a; }
-.dark .settings-usage-unit { color: #7a6a4a; }
-.dark .settings-usage-note { color: #7a6a4a; }
-.dark .hv2-bc-wxmeta { color: #7a6a4a; }
 
 /* ── Calendar Heatmap ── */
 .monitor-card-cal { padding: 0; overflow: hidden; }

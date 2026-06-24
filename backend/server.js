@@ -192,7 +192,13 @@ function cliBuildEnv() {
   return env
 }
 
-function cliBuildArgs(prompt, systemAppend, streaming) {
+const MODEL_MAP = {
+  sonnet: 'claude-sonnet-4-6',
+  opus: 'claude-opus-4-8',
+  haiku: 'claude-haiku-4-5-20251001',
+}
+
+function cliBuildArgs(prompt, systemAppend, streaming, model) {
   const args = [
     '-p', prompt,
     '--output-format', streaming ? 'stream-json' : 'json',
@@ -200,14 +206,15 @@ function cliBuildArgs(prompt, systemAppend, streaming) {
     '--effort', 'low',
     '--no-session-persistence',
   ]
+  if (model && MODEL_MAP[model]) args.push('--model', MODEL_MAP[model])
   if (streaming) args.push('--include-partial-messages')
   if (systemAppend) args.push('--append-system-prompt', systemAppend)
   return args
 }
 
-async function streamClaude(prompt, systemAppend, onDelta) {
+async function streamClaude(prompt, systemAppend, onDelta, model) {
   return new Promise((resolve, reject) => {
-    const child = spawn('claude', cliBuildArgs(prompt, systemAppend, true), {
+    const child = spawn('claude', cliBuildArgs(prompt, systemAppend, true, model), {
       cwd: PROJECT_ROOT,
       env: cliBuildEnv(),
       stdio: ['ignore', 'pipe', 'pipe']
@@ -336,7 +343,7 @@ app.post('/api/chat', async (req, res) => {
     lastExtractAt = Date.now()
     extractFromRecentChat(since).catch(e => console.log('聊天记忆提炼失败', e.message))
   }
-  const { messages, session_id = 'default', preferences } = req.body
+  const { messages, session_id = 'default', preferences, model } = req.body
   const lastMsg = messages[messages.length - 1]
   const { error: insertErr } = await supabase.from('messages').insert({
     session_id, role: lastMsg.role, content: lastMsg.content
@@ -353,7 +360,7 @@ app.post('/api/chat', async (req, res) => {
       trace => res.write(`data: ${JSON.stringify({ trace })}\n\n`)
     )
     const prefsPrompt = buildPrefsPrompt(preferences)
-    const fullContent = await streamClaude(transcript, memoryCache + TRACE_INSTRUCTION + context + prefsPrompt, splitter)
+    const fullContent = await streamClaude(transcript, memoryCache + TRACE_INSTRUCTION + context + prefsPrompt, splitter, model)
     const { trace, body } = extractTrace(fullContent)
     await insertMessageSafe({ session_id, role: 'assistant', content: body, trace })
     res.write('data: [DONE]\n\n')
