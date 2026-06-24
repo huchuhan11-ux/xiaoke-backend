@@ -468,24 +468,60 @@ function Records() {
     ))
   }
 
+  const diaryEntries = entries.filter(e => e._type === 'diary')
+  const letterEntries = entries.filter(e => e._type === 'letter')
+
   return (
     <div className="journal">
       <div className="journal-feed">
-        {entries.length === 0 && (
-          <div className="journal-empty">
-            <div className="journal-empty-sym">✦</div>
-            <div>还没有记录</div>
+        {/* 日记 板块 */}
+        <div className="records-section">
+          <div className="records-section-hd">日记</div>
+          <div className="records-section-feed">
+            {diaryEntries.length === 0 ? (
+              <div className="records-empty-sm">还没有日记</div>
+            ) : (
+              diaryEntries.map(e => (
+                <JournalCard key={ekey(e)} entry={e}
+                  expanded={expanded.has(ekey(e))}
+                  onToggle={() => toggleExpanded(ekey(e))}
+                  onReplySubmit={handleReplySubmit}
+                />
+              ))
+            )}
           </div>
-        )}
-        {entries.map(e => (
-          <JournalCard key={ekey(e)} entry={e}
-            expanded={expanded.has(ekey(e))}
-            onToggle={() => toggleExpanded(ekey(e))}
-            onReplySubmit={handleReplySubmit}
-          />
-        ))}
+        </div>
+
+        {/* 信 板块 */}
+        <div className="records-section">
+          <div className="records-section-hd">
+            <span>信</span>
+            <button className="jbar-mail" onClick={generateLetter} disabled={generating} title="让克写封信">
+              {generating ? '…' : (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                  <polyline points="22,6 12,13 2,6"/>
+                </svg>
+              )}
+            </button>
+          </div>
+          <div className="records-section-feed">
+            {letterEntries.length === 0 ? (
+              <div className="records-empty-sm">还没有信</div>
+            ) : (
+              letterEntries.map(e => (
+                <JournalCard key={ekey(e)} entry={e}
+                  expanded={expanded.has(ekey(e))}
+                  onToggle={() => toggleExpanded(ekey(e))}
+                  onReplySubmit={handleReplySubmit}
+                />
+              ))
+            )}
+          </div>
+        </div>
       </div>
 
+      {/* 日记撰写条 */}
       <div className={`jbar ${composing ? 'jbar-open' : ''}`}>
         {composing ? (
           <>
@@ -507,14 +543,6 @@ function Records() {
         ) : (
           <div className="jbar-closed">
             <button className="jbar-ph" onClick={() => setComposing(true)}>今天……</button>
-            <button className="jbar-mail" onClick={generateLetter} disabled={generating} title="让克写封信">
-              {generating ? '…' : (
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-                  <polyline points="22,6 12,13 2,6"/>
-                </svg>
-              )}
-            </button>
           </div>
         )}
       </div>
@@ -661,9 +689,6 @@ function Home({ dark, setDark }) {
 
       {/* 时间 + 日期 */}
       <div className="hv2-top">
-        <button className="hv2-theme-btn" onClick={() => setDark(d => !d)}>
-          {dark ? '☀️' : '🌙'}
-        </button>
         <div className="hv2-clock">{hh}:{mm}</div>
         <div className="hv2-date">{dateStr}</div>
         {greeting ? <div className="hv2-greeting">{greeting}</div> : null}
@@ -1183,6 +1208,13 @@ export default function App() {
             } catch {}
           }
         }
+      }
+      // split multi-message reply on [MSG] separator
+      const parts = aiMsg.content.split('[MSG]').map(p => p.trim()).filter(Boolean)
+      if (parts.length > 1) {
+        const now = Date.now()
+        const multiMsgs = parts.map((p, i) => ({ id: now + i, role: 'assistant', content: p, trace: i === 0 ? aiMsg.trace : undefined }))
+        setMessages(prev => [...prev.filter(m => m.id !== aiMsg.id), ...multiMsgs])
       }
     } catch {
       setMessages(prev => [...prev, { id: Date.now(), role: 'assistant', content: '出错了，待会儿再试。' }])

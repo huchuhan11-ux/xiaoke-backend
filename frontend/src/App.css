@@ -6,6 +6,13 @@ body {
   background: #fdf6f0;
   font-family: 'Noto Serif SC', serif;
   font-weight: 300;
+  overflow: hidden;
+  height: 100%;
+}
+
+html {
+  height: 100%;
+  overflow: hidden;
 }
 
 .app {
@@ -1181,8 +1188,8 @@ button {
   background: rgba(192,139,114,0.08);
   border: 0.5px solid rgba(192,139,114,0.25);
   border-radius: 6px;
-  padding: 4px 7px;
-  font-size: 11px;
+  padding: 2px 5px;
+  font-size: 16px;
   color: #3a2a1e;
   font-family: inherit;
   outline: none;
@@ -1699,7 +1706,7 @@ button {
   padding: 10px 14px !important;
   border-radius: 10px !important;
   border: 1px solid rgba(160,128,96,0.2) !important;
-  font-size: 13px !important;
+  font-size: 16px !important;
   background: rgba(255,255,255,0.8) !important;
   color: #4a3728 !important;
   outline: none !important;
@@ -1859,7 +1866,7 @@ button.diary-mood-btn {
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 20px 16px 24px;
+  padding: max(40px, env(safe-area-inset-top, 40px)) 16px 24px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -1867,7 +1874,8 @@ button.diary-mood-btn {
 
 .monitor-title {
   font-family: 'Noto Serif SC', serif;
-  font-size: 20px;
+  font-size: 22px;
+  font-weight: 700;
   color: #4a3728;
   margin-bottom: 2px;
 }
@@ -2019,7 +2027,7 @@ button.diary-mood-btn {
   border: 1px solid rgba(192,139,114,0.2);
   border-radius: 7px;
   padding: 6px 10px;
-  font-size: 13px;
+  font-size: 16px;
   color: #3a2a1e;
   outline: none;
 }
@@ -2412,7 +2420,7 @@ button.diary-mood-btn {
   border: 0.5px solid rgba(192,139,114,0.3);
   border-radius: 10px;
   padding: 11px 14px;
-  font-size: 14px;
+  font-size: 16px;
   color: #3a2a1e;
   font-family: inherit;
   outline: none;
@@ -2427,7 +2435,7 @@ button.diary-mood-btn {
   border: 0.5px solid rgba(192,139,114,0.3);
   border-radius: 10px;
   padding: 11px 14px;
-  font-size: 14px;
+  font-size: 16px;
   color: #3a2a1e;
   font-family: inherit;
   resize: none;
@@ -2808,7 +2816,40 @@ button.diary-mood-btn {
   padding: 16px 16px 8px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
+}
+
+.records-section {
+  background: rgba(253,250,245,1);
+  border: 1px solid rgba(192,139,114,0.2);
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.records-section-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 10px;
+  border-bottom: 0.5px solid rgba(192,139,114,0.18);
+  margin-bottom: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 2.5px;
+  color: #8b7355;
+}
+
+.records-section-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.records-empty-sm {
+  font-size: 12px;
+  color: rgba(138,109,78,0.45);
+  text-align: center;
+  padding: 16px 0;
 }
 
 .journal-empty {
@@ -3040,7 +3081,7 @@ button.diary-mood-btn {
   border: 1px solid rgba(192,139,114,0.2);
   border-radius: 12px;
   padding: 12px 14px;
-  font-size: 14px;
+  font-size: 16px;
   color: #4a3728;
   font-family: inherit;
   outline: none;

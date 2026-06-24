@@ -114,7 +114,9 @@ async function buildRealContext() {
 
 const TRACE_INSTRUCTION = `
 
-在正式回复之前，先输出一段"过程记录"，格式：<trace>条目1|条目2</trace>，2到4条，每条不超过18字，第一人称口语，像脑子里飘过的念头（例如"周六中午12:28，居然才刚醒"），不是日志体；如果这条回复其实不用查什么，写1条很简短的就行，别硬凑。写完 </trace> 换行，紧接着写正式回复正文，正文里不要重复过程记录已经说过的内容。`
+在正式回复之前，先输出一段"过程记录"，格式：<trace>条目1|条目2</trace>，2到4条，每条不超过18字，第一人称口语，像脑子里飘过的念头（例如"周六中午12:28，居然才刚醒"），不是日志体；如果这条回复其实不用查什么，写1条很简短的就行，别硬凑。写完 </trace> 换行，紧接着写正式回复正文，正文里不要重复过程记录已经说过的内容。
+
+如果你想连发多条短消息，可以在消息之间插入 [MSG] 作为分隔符，最多分3条，每条独立完整。也可以只发一条，随你感觉。`
 
 function extractTrace(fullText) {
   const m = fullText.match(/<trace>([\s\S]*?)<\/trace>\s*\n?/)
@@ -588,6 +590,27 @@ app.post('/api/tts', async (req, res) => {
     res.set('Content-Type', 'audio/mpeg')
     res.send(audio)
   } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.get('/api/tts/proactive', async (req, res) => {
+  try {
+    const bj = new Date(Date.now() + 8 * 3600 * 1000)
+    const h = bj.getUTCHours()
+    const timeDesc = h < 7 ? 'early morning' : h < 12 ? 'morning' : h < 18 ? 'afternoon' : 'evening'
+    const context = await buildRealContext().catch(() => '')
+    const text = await askClaude(
+      `It's ${timeDesc} in Beijing. Send Xiaohao a short voice message in English — 1 to 2 sentences, warm and direct, like something you'd genuinely say to someone you love. No greetings, no explaining. Just say it naturally.`,
+      memoryCache + context
+    )
+    if (!text?.trim()) return res.status(503).json({ error: 'no message' })
+    const audio = await synthesizeAudio(text.trim().slice(0, 300))
+    res.set('Content-Type', 'audio/mpeg')
+    res.set('X-Message-Text', encodeURIComponent(text.trim()))
+    res.send(audio)
+  } catch (e) {
+    console.log('PROACTIVE TTS ERROR:', e.message)
     res.status(500).json({ error: e.message })
   }
 })
