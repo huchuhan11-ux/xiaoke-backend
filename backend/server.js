@@ -246,6 +246,25 @@ async function askClaude(prompt, systemAppend) {
 }
 
 // ── 聊天 ──
+app.get('/api/sessions', async (req, res) => {
+  const { data, error } = await supabase
+    .from('messages')
+    .select('session_id, role, content, created_at')
+    .order('created_at', { ascending: true })
+  if (error) return res.status(500).json({ error: error.message })
+  const map = {}
+  for (const row of data) {
+    if (!map[row.session_id]) {
+      map[row.session_id] = { session_id: row.session_id, created_at: row.created_at, preview: null }
+    }
+    if (!map[row.session_id].preview && row.role === 'user') {
+      map[row.session_id].preview = row.content.slice(0, 30)
+    }
+  }
+  const sessions = Object.values(map).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+  res.json(sessions)
+})
+
 app.get('/api/messages', async (req, res) => {
   const { session_id } = req.query
   const { data, error } = await supabase

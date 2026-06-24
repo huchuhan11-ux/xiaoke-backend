@@ -724,6 +724,9 @@ export default function App() {
     return h >= 20 || h < 7
   })
   const [view, setView] = useState('home')
+  const [sessionId, setSessionId] = useState(() => localStorage.getItem('sessionId') || 'default')
+  const [sessionDrawerOpen, setSessionDrawerOpen] = useState(false)
+  const [sessions, setSessions] = useState([])
   const [messages, setMessages] = useState(INIT)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -732,6 +735,32 @@ export default function App() {
   const [editingId, setEditingId] = useState(null)
   const bottomRef = useRef(null)
   const bgInputRef = useRef(null)
+
+  const loadSessions = () => {
+    fetch(`${API}/api/sessions`)
+      .then(r => r.json())
+      .then(data => setSessions(Array.isArray(data) ? data : []))
+      .catch(() => {})
+  }
+
+  const newSession = () => {
+    const id = Date.now().toString()
+    setSessionId(id)
+    localStorage.setItem('sessionId', id)
+    setMessages(INIT)
+    setSessionDrawerOpen(false)
+    setEditingId(null)
+    setInput('')
+  }
+
+  const switchSession = (id) => {
+    if (id === sessionId) { setSessionDrawerOpen(false); return }
+    setSessionId(id)
+    localStorage.setItem('sessionId', id)
+    setSessionDrawerOpen(false)
+    setEditingId(null)
+    setInput('')
+  }
 
   const toggleTrace = (id) => {
     setOpenTraces(prev => {
@@ -799,14 +828,20 @@ export default function App() {
   }, [dark])
 
   useEffect(() => {
-    fetch(`${API}/api/messages?session_id=default`)
+    loadSessions()
+  }, [])
+
+  useEffect(() => {
+    fetch(`${API}/api/messages?session_id=${sessionId}`)
       .then(r => r.json())
       .then(data => {
         if (data && data.length > 0) {
           setMessages([...INIT, ...data.map(m => ({ id: m.id, role: m.role, content: m.content, trace: m.trace || null }))])
+        } else {
+          setMessages(INIT)
         }
       }).catch(() => {})
-  }, [])
+  }, [sessionId])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -841,7 +876,7 @@ export default function App() {
     if (editingId) {
       const idx = base.findIndex(m => m.id === editingId)
       if (idx !== -1) base = base.slice(0, idx)
-      fetch(`${API}/api/messages/${editingId}?session_id=default`, { method: 'DELETE' }).catch(() => {})
+      fetch(`${API}/api/messages/${editingId}?session_id=${sessionId}`, { method: 'DELETE' }).catch(() => {})
       setEditingId(null)
     }
     const userMsg = { id: Date.now(), role: 'user', content: input }
@@ -855,7 +890,7 @@ export default function App() {
       const res = await fetch(`${API}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: history, session_id: 'default' })
+        body: JSON.stringify({ messages: history, session_id: sessionId })
       })
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
@@ -886,6 +921,7 @@ export default function App() {
       setMessages(prev => [...prev, { id: Date.now(), role: 'assistant', content: '出错了，待会儿再试。' }])
     } finally {
       setLoading(false)
+      loadSessions()
     }
   }
 
@@ -903,9 +939,30 @@ export default function App() {
             backgroundSize: 'cover',
             backgroundPosition: 'center'
           } : {}}>
+            {sessionDrawerOpen && <div className="session-overlay" onClick={() => setSessionDrawerOpen(false)} />}
+            <div className={`session-drawer ${sessionDrawerOpen ? 'open' : ''}`}>
+              <div className="session-drawer-header">
+                <span>对话历史</span>
+                <button onClick={() => setSessionDrawerOpen(false)}>✕</button>
+              </div>
+              <button className="session-new-btn" onClick={newSession}>＋ 新对话</button>
+              <div className="session-list">
+                {sessions.map(s => (
+                  <div key={s.session_id} className={`session-item ${s.session_id === sessionId ? 'active' : ''}`} onClick={() => switchSession(s.session_id)}>
+                    <div className="session-date">{new Date(s.created_at).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}</div>
+                    <div className="session-preview">{s.preview || '（空对话）'}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
             <div className="chat-header">
               <span className="chat-header-dot" />
               <span className="chat-header-name">小克</span>
+              <button className="chat-history-btn" onClick={() => { loadSessions(); setSessionDrawerOpen(true) }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+                </svg>
+              </button>
               <button className="chat-bg-btn" onClick={() => bgInputRef.current?.click()}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <rect x="3" y="3" width="18" height="18" rx="2"/>
