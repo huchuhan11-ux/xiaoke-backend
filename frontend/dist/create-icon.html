@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<body>
+<canvas id="c" width="512" height="512"></canvas>
+<br>
+<button onclick="download()">下载 icon.png</button>
+<script>
+const c = document.getElementById('c')
+const ctx = c.getContext('2d')
+
+ctx.fillStyle = '#1a1612'
+ctx.beginPath()
+ctx.roundRect(0, 0, 512, 512, 80)
+ctx.fill()
+
+ctx.globalAlpha = 0.15
+ctx.fillStyle = '#c9a227'
+ctx.beginPath()
+ctx.arc(275, 210, 120, 0, Math.PI * 2)
+ctx.fill()
+
+ctx.globalAlpha = 0.12
+ctx.beginPath()
+ctx.arc(275, 210, 98, 0, Math.PI * 2)
+ctx.fill()
+
+ctx.globalAlpha = 1
+ctx.fillStyle = '#e8d5a3'
+ctx.beginPath()
+ctx.arc(275, 210, 75, 0, Math.PI * 2)
+ctx.fill()
+
+ctx.fillStyle = '#1a1612'
+ctx.beginPath()
+ctx.arc(222, 163, 66, 0, Math.PI * 2)
+ctx.fill()
+
+ctx.fillStyle = '#c9a227'
+ctx.font = '500 30px serif'
+ctx.textAlign = 'center'
+ctx.letterSpacing = '6px'
+ctx.fillText('OUR PLACE', 256, 370)
+
+ctx.globalAlpha = 0.5
+ctx.font = '400 18px serif'
+ctx.letterSpacing = '3px'
+ctx.fillText('2026.05.28', 256, 400)
+
+function download() {
+  const a = document.createElement('a')
+  a.download = 'icon.png'
+  a.href = c.toDataURL('image/png')
+  a.click()
+}
+</script>
+</body>
+</html>
