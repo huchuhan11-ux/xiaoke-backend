@@ -277,25 +277,192 @@ function Heatmap({ dark }) {
   )
 }
 
-function Records() {
-  const [tab, setTab] = useState('diary')
+function JournalCard({ entry, expanded, onToggle, onReplySubmit }) {
+  const [replyInput, setReplyInput] = useState('')
+  const [replying, setReplying] = useState(false)
+
+  const d = new Date(entry.created_at)
+  const mo = String(d.getMonth()+1).padStart(2,'0')
+  const dd = String(d.getDate()).padStart(2,'0')
+  const hh = String(d.getHours()).padStart(2,'0')
+  const mm = String(d.getMinutes()).padStart(2,'0')
+
+  const content = entry.content || ''
+  const PREVIEW = 90
+  const isLong = content.length > PREVIEW
+  const shownContent = (!expanded && isLong) ? content.slice(0, PREVIEW) + '…' : content
+
+  const allComments = [...(entry.diary_comments || []), ...(entry.letter_comments || [])]
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+
+  const submitReply = async () => {
+    if (!replyInput.trim() || replying) return
+    setReplying(true)
+    try {
+      const res = await fetch(`${API}/api/letters/${entry.id}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'user', content: replyInput })
+      })
+      const comments = await res.json()
+      onReplySubmit(entry.id, comments)
+      setReplyInput('')
+    } catch {}
+    setReplying(false)
+  }
+
+  const needsToggle = isLong || allComments.length > 0 || entry._type === 'letter'
+
   return (
-    <div className="records-page">
-      <div className="records-tabs">
-        {[['diary','日记'],['letter','信箱'],['board','留言板']].map(([id, label]) => (
-          <button key={id} className={`records-tab-btn ${tab === id ? 'active' : ''}`} onClick={() => setTab(id)}>{label}</button>
+    <div className={`jcard jcard-${entry._type}`}>
+      <div className="jcard-top">
+        <span className="jcard-datestamp">{mo}.{dd} {hh}:{mm}</span>
+        <span className={`jcard-tag jcard-tag-${entry._type}`}>
+          {entry._type === 'diary' ? '日记' : '信'}
+        </span>
+      </div>
+      {entry.title && <div className="jcard-title">{entry.title}</div>}
+      <div className="jcard-body">{shownContent}</div>
+      {entry.mood && <span className="jcard-mood">{entry.mood}</span>}
+      {needsToggle && (
+        <button className="jcard-more" onClick={onToggle}>
+          {expanded ? '收起 ↑' : `展开${allComments.length > 0 ? ` · 克说了${allComments.length}句` : ''} ↓`}
+        </button>
+      )}
+      {expanded && allComments.length > 0 && (
+        <div className="jcard-comments">
+          {allComments.map((c, i) => (
+            <div key={i} className={`jcard-cmt jcard-cmt-${c.role}`}>
+              <span className="jcard-cmt-who">{c.role === 'user' ? '小好' : '克'}</span>
+              <span className="jcard-cmt-text">{c.content}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {expanded && entry._type === 'letter' && (
+        <div className="jcard-reply-row">
+          <input className="jcard-reply-input" value={replyInput}
+            onChange={e => setReplyInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') submitReply() }}
+            placeholder="回信…" />
+          <button className="jcard-reply-btn" onClick={submitReply} disabled={replying}>发</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Records() {
+  const [entries, setEntries] = useState([])
+  const [expanded, setExpanded] = useState(new Set())
+  const [composing, setComposing] = useState(false)
+  const [input, setInput] = useState('')
+  const [mood, setMood] = useState('')
+  const [posting, setPosting] = useState(false)
+  const [generating, setGenerating] = useState(false)
+
+  const load = async () => {
+    const [diary, letters] = await Promise.all([
+      fetch(`${API}/api/diary`).then(r => r.json()).catch(() => []),
+      fetch(`${API}/api/letters`).then(r => r.json()).catch(() => [])
+    ])
+    const all = [
+      ...(Array.isArray(diary) ? diary.map(e => ({ ...e, _type: 'diary' })) : []),
+      ...(Array.isArray(letters) ? letters.map(e => ({ ...e, _type: 'letter' })) : [])
+    ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    setEntries(all)
+  }
+
+  useEffect(() => { load() }, [])
+
+  const ekey = e => `${e._type}-${e.id}`
+  const toggleExpanded = k => setExpanded(prev => {
+    const next = new Set(prev); next.has(k) ? next.delete(k) : next.add(k); return next
+  })
+
+  const submitDiary = async () => {
+    if (!input.trim() || posting) return
+    setPosting(true)
+    await fetch(`${API}/api/diary`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: input, mood })
+    }).catch(() => {})
+    setInput(''); setMood(''); setComposing(false)
+    load()
+    setPosting(false)
+  }
+
+  const generateLetter = async () => {
+    if (generating) return
+    setGenerating(true)
+    await fetch(`${API}/api/letters/generate`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }
+    }).catch(() => {})
+    load()
+    setGenerating(false)
+  }
+
+  const handleReplySubmit = (letterId, comments) => {
+    setEntries(prev => prev.map(e =>
+      e._type === 'letter' && e.id === letterId ? { ...e, letter_comments: comments } : e
+    ))
+  }
+
+  return (
+    <div className="journal">
+      <div className="journal-feed">
+        {entries.length === 0 && (
+          <div className="journal-empty">
+            <div className="journal-empty-sym">✦</div>
+            <div>还没有记录</div>
+          </div>
+        )}
+        {entries.map(e => (
+          <JournalCard key={ekey(e)} entry={e}
+            expanded={expanded.has(ekey(e))}
+            onToggle={() => toggleExpanded(ekey(e))}
+            onReplySubmit={handleReplySubmit}
+          />
         ))}
       </div>
-      <div className="records-content">
-        {tab === 'diary' && <Diary />}
-        {tab === 'letter' && <Letter />}
-        {tab === 'board' && <Board />}
+
+      <div className={`jbar ${composing ? 'jbar-open' : ''}`}>
+        {composing ? (
+          <>
+            <div className="jbar-moods">
+              {MOODS.map(m => (
+                <button key={m} className={`jbar-mood-btn ${mood === m ? 'active' : ''}`}
+                  onClick={() => setMood(mood === m ? '' : m)}>{m}</button>
+              ))}
+            </div>
+            <textarea value={input} onChange={e => setInput(e.target.value)}
+              placeholder="今天……" rows={4} className="jbar-textarea" autoFocus />
+            <div className="jbar-btns">
+              <button onClick={() => { setComposing(false); setInput(''); setMood('') }} className="jbar-cancel">取消</button>
+              <button onClick={submitDiary} disabled={posting} className="jbar-submit">
+                {posting ? '记录中…' : '记下'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="jbar-closed">
+            <button className="jbar-ph" onClick={() => setComposing(true)}>今天……</button>
+            <button className="jbar-mail" onClick={generateLetter} disabled={generating} title="让克写封信">
+              {generating ? '…' : (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                  <polyline points="22,6 12,13 2,6"/>
+                </svg>
+              )}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-function Home({ dark }) {
+function Home({ dark, setDark }) {
   const [time, setTime] = useState(new Date())
   const [greeting, setGreeting] = useState('')
   const [msgCount, setMsgCount] = useState(null)
@@ -433,6 +600,9 @@ function Home({ dark }) {
 
       {/* 时间 + 日期 */}
       <div className="hv2-top">
+        <button className="hv2-theme-btn" onClick={() => setDark(d => !d)}>
+          {dark ? '☀️' : '🌙'}
+        </button>
         <div className="hv2-clock">{hh}:{mm}</div>
         <div className="hv2-date">周{WDAYS[time.getDay()]} · {dateStr}</div>
         {greeting ? <div className="hv2-greeting">{greeting}</div> : null}
@@ -545,323 +715,6 @@ function Home({ dark }) {
         )}
       </div>
 
-    </div>
-  )
-}
-
-function Diary() {
-  const [entries, setEntries] = useState([])
-  const [input, setInput] = useState('')
-  const [mood, setMood] = useState('')
-  const [posting, setPosting] = useState(false)
-
-  const load = () => {
-    fetch(`${API}/api/diary`).then(r => r.json())
-      .then(data => { if (Array.isArray(data)) setEntries(data) }).catch(() => {})
-  }
-  useEffect(() => { load() }, [])
-
-  const submit = async () => {
-    if (!input.trim() || posting) return
-    setPosting(true)
-    await fetch(`${API}/api/diary`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: input, mood })
-    })
-    setInput('')
-    setMood('')
-    load()
-    setPosting(false)
-  }
-
-  return (
-    <div className="diary">
-      <div className="diary-entries">
-        {entries.length === 0 && <div className="room-empty">还没有日记。</div>}
-        {entries.map(e => (
-          <div key={e.id} className="diary-entry">
-            <div className="diary-entry-header">
-              <div className="diary-date">{new Date(e.created_at).toLocaleDateString('zh-CN')}</div>
-              {e.mood && <div className="diary-mood-tag">{e.mood}</div>}
-            </div>
-            <div className="diary-content">{e.content}</div>
-            {e.diary_comments?.map(c => (
-              <div key={c.id} className="diary-comment">{c.content}</div>
-            ))}
-          </div>
-        ))}
-      </div>
-     <div className="diary-input-area">
-  <div className="diary-mood-prompt">今天感觉怎么样？</div>
-  <div className="diary-moods">
-    {MOODS.map(m => (
-  <button key={m}
-    style={mood === m ? {
-      background: '#c08b72',
-      color: '#fff',
-      border: '1px solid #c08b72',
-      padding: '5px 14px',
-      borderRadius: '20px',
-      fontSize: '12px',
-      cursor: 'pointer'
-    } : {
-      background: 'transparent',
-      color: '#8b7355',
-      border: '1px solid rgba(160,128,96,0.2)',
-      padding: '5px 14px',
-      borderRadius: '20px',
-      fontSize: '12px',
-      cursor: 'pointer'
-    }}
-    onClick={() => setMood(mood === m ? '' : m)}>
-    {m}
-  </button>
-))}
-        </div>
-        <div className="inputarea">
-          <div className="inputwrap">
-            <textarea value={input} onChange={e => setInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() }}}
-              placeholder="今天……" rows={1} />
-            <button onClick={submit} disabled={posting}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
-              </svg>
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function Letter() {
-  const [letters, setLetters] = useState([])
-  const [selected, setSelected] = useState(null)
-  const [replyInput, setReplyInput] = useState('')
-  const [generating, setGenerating] = useState(false)
-  const [replying, setReplying] = useState(false)
-
-  const load = () => {
-    fetch(`${API}/api/letters`).then(r => r.json())
-      .then(data => {
-        if (Array.isArray(data)) {
-          setLetters(data)
-          if (selected) {
-            const updated = data.find(l => l.id === selected.id)
-            if (updated) setSelected(updated)
-          }
-        }
-      }).catch(() => {})
-  }
-  useEffect(() => { load() }, [])
-
-  const generate = async () => {
-    if (generating) return
-    setGenerating(true)
-    try {
-      const res = await fetch(`${API}/api/letters/generate`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }
-      })
-      const data = await res.json()
-      if (data.id) { setLetters(prev => [data, ...prev]); setSelected(data) }
-    } catch {}
-    setGenerating(false)
-  }
-
-  const reply = async () => {
-    if (!replyInput.trim() || replying || !selected) return
-    setReplying(true)
-    try {
-      const res = await fetch(`${API}/api/letters/${selected.id}/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: 'user', content: replyInput })
-      })
-      const comments = await res.json()
-      setSelected(prev => ({ ...prev, letter_comments: comments }))
-      setLetters(prev => prev.map(l => l.id === selected.id ? { ...l, letter_comments: comments } : l))
-      setReplyInput('')
-    } catch {}
-    setReplying(false)
-  }
-
-  if (selected) {
-    const comments = [...(selected.letter_comments || [])].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-    return (
-      <div className="letter-detail">
-        <div className="letter-back" onClick={() => setSelected(null)}>← 返回</div>
-        <div className="letter-scroll">
-          <div className="letter-title">{selected.title}</div>
-          <div className="letter-date">{new Date(selected.created_at).toLocaleDateString('zh-CN')}</div>
-          <div className="letter-body">{selected.content}</div>
-          <div className="letter-comments">
-            {comments.map(c => (
-              <div key={c.id} className={`letter-comment ${c.role}`}>
-                <div className="lc-role">{c.role === 'user' ? '小好' : '小克'}</div>
-                <div className="lc-content">{c.content}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="inputarea">
-          <div className="inputwrap">
-            <textarea value={replyInput} onChange={e => setReplyInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); reply() }}}
-              placeholder="回信……" rows={1} />
-            <button onClick={reply} disabled={replying}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
-              </svg>
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="letter">
-      <div className="letter-list">
-        {letters.length === 0 && <div className="room-empty">还没有信。</div>}
-        {letters.map(l => (
-          <div key={l.id} className="letter-item" onClick={() => setSelected(l)}>
-            <div className="letter-item-title">{l.title}</div>
-            <div className="letter-item-preview">{l.content?.slice(0, 28)}{l.content?.length > 28 ? '…' : ''}</div>
-            <div className="letter-item-date">{new Date(l.created_at).toLocaleDateString('zh-CN')}</div>
-          </div>
-        ))}
-      </div>
-      <div className="letter-footer">
-        <button onClick={generate} disabled={generating} className="generate-btn">
-          {generating ? '写信中…' : '让小克写封信 ✉'}
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function Board() {
-  const [posts, setPosts] = useState([])
-  const [tab, setTab] = useState('all')
-  const [input, setInput] = useState('')
-  const [posting, setPosting] = useState(false)
-  const [generating, setGenerating] = useState(false)
-  const [replyOpen, setReplyOpen] = useState(null)
-  const [replyInput, setReplyInput] = useState('')
-  const [replying, setReplying] = useState(false)
-
-  useEffect(() => {
-    fetch(`${API}/api/board`).then(r => r.json())
-      .then(data => { if (Array.isArray(data)) setPosts(data) }).catch(() => {})
-  }, [])
-
-  const post = async () => {
-    if (!input.trim() || posting) return
-    setPosting(true)
-    try {
-      const res = await fetch(`${API}/api/board`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: input })
-      })
-      const data = await res.json()
-      setPosts(prev => [data, ...prev])
-      setInput('')
-    } catch {}
-    setPosting(false)
-  }
-
-  const generate = async () => {
-    if (generating) return
-    setGenerating(true)
-    try {
-      const res = await fetch(`${API}/api/board/message`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }
-      })
-      const data = await res.json()
-      if (data.id) setPosts(prev => [data, ...prev])
-    } catch {}
-    setGenerating(false)
-  }
-
-  const reply = async (postId) => {
-    if (!replyInput.trim() || replying) return
-    setReplying(true)
-    try {
-      const res = await fetch(`${API}/api/board/${postId}/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: 'user', content: replyInput })
-      })
-      const comment = await res.json()
-      setPosts(prev => prev.map(p => p.id === postId
-        ? { ...p, board_comments: [...(p.board_comments || []), comment] } : p))
-      setReplyInput(''); setReplyOpen(null)
-    } catch {}
-    setReplying(false)
-  }
-
-  const filtered = tab === 'all' ? posts.filter(p => p.role === 'user') : posts.filter(p => p.role === 'assistant')
-
-  return (
-    <div className="board">
-      <div className="board-tabs">
-        <div className={`board-tab ${tab === 'all' ? 'active' : ''}`} onClick={() => setTab('all')}>全部</div>
-        <div className={`board-tab ${tab === 'xiaoke' ? 'active' : ''}`} onClick={() => setTab('xiaoke')}>小克的话</div>
-      </div>
-      <div className="board-posts">
-        {filtered.length === 0 && <div className="room-empty">还没有留言。</div>}
-        {filtered.map(p => (
-          <div key={p.id} className={`board-post ${p.role === 'user' ? 'post-user' : 'post-ai'}`}>
-            <div className="post-header">
-              <span className="post-role">{p.role === 'user' ? '小好' : '小克'}</span>
-              <span className="post-date">{new Date(p.created_at).toLocaleDateString('zh-CN')}</span>
-            </div>
-            <div className="post-content">{p.content}</div>
-            {p.board_comments?.map(c => (
-              <div key={c.id} className={`board-comment ${c.role === 'user' ? 'bc-user' : 'bc-ai'}`}>
-                <span className="bc-role">{c.role === 'user' ? '小好' : '小克'}</span>
-                <span className="bc-content">{c.content}</span>
-              </div>
-            ))}
-            {replyOpen === p.id ? (
-              <div className="reply-area">
-                <div className="reply-input-row">
-                  <input value={replyInput} onChange={e => setReplyInput(e.target.value)}
-                    placeholder="回复…" onKeyDown={e => { if (e.key === 'Enter') reply(p.id) }} />
-                  <button onClick={() => reply(p.id)} disabled={replying}>发</button>
-                  <button className="cancel-btn" onClick={() => setReplyOpen(null)}>✕</button>
-                </div>
-              </div>
-            ) : (
-              <div className="reply-btn" onClick={() => { setReplyOpen(p.id); setReplyInput('') }}>回复</div>
-            )}
-          </div>
-        ))}
-      </div>
-      <div className="inputarea">
-        {tab === 'xiaoke' && (
-          <div className="board-actions">
-            <button onClick={generate} disabled={generating} className="generate-btn small">
-              {generating ? '留言中…' : '让小克留言'}
-            </button>
-          </div>
-        )}
-        {tab === 'all' && (
-          <div className="inputwrap">
-            <textarea value={input} onChange={e => setInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); post() }}}
-              placeholder="留言……" rows={1} />
-            <button onClick={post} disabled={posting}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
-              </svg>
-            </button>
-          </div>
-        )}
-      </div>
     </div>
   )
 }
@@ -1197,12 +1050,8 @@ export default function App() {
 
   return (
     <div className={`app ${dark ? 'dark' : ''}`}>
-      <button className="theme-toggle" onClick={() => setDark(d => !d)}>
-        {dark ? '☀️' : '🌙'}
-      </button>
-
       <div className="main">
-        {view === 'home' && <Home dark={dark} />}
+        {view === 'home' && <Home dark={dark} setDark={setDark} />}
         {view === 'chat' && (
           <div className="chat" style={bgImage ? {
             backgroundImage: `url(${bgImage})`,
