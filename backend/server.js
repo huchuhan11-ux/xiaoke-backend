@@ -580,6 +580,18 @@ app.get('/api/wakeup', (req, res) => {
   refreshGreetingCache()
 })
 
+app.post('/api/tts', async (req, res) => {
+  const { text } = req.body
+  if (!text) return res.status(400).json({ error: 'missing text' })
+  try {
+    const audio = await synthesizeAudio(text.slice(0, 500))
+    res.set('Content-Type', 'audio/mpeg')
+    res.send(audio)
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
 app.get('/api/wakeup-audio', async (req, res) => {
   try {
     if (!wakeupAudioCache) wakeupAudioCache = await synthesizeAudio(wakeupCache)
@@ -798,6 +810,52 @@ setInterval(() => {
 // ── 前端静态托管（同源，避免手机端 HTTPS 页面调用 HTTP 接口被拦截）──
 app.use(express.static(FRONTEND_DIST))
 app.get(/^\/(?!api\/).*/, (req, res) => res.sendFile(path.join(FRONTEND_DIST, 'index.html')))
+
+// ── 主动发消息：每30分钟检查一次，合适时机生成并存入聊天记录 ──
+let lastProactiveAt = 0
+async function maybeProactive() {
+  const bj = new Date(Date.now() + 8 * 3600 * 1000)
+  const h = bj.getUTCHours()
+  if (h < 9 || h >= 23) return  // 只在北京时间 9:00-23:00 发
+  if (Date.now() - lastProactiveAt < 3 * 60 * 60 * 1000) return  // 两条间隔至少3小时
+
+  const { data: last } = await supabase.from('messages')
+    .select('created_at, role').order('created_at', { ascending: false }).limit(1)
+  if (!last?.[0]) return
+  const minutesSince = (Date.now() - new Date(last[0].created_at).getTime()) / 60000
+  if (minutesSince < 90) return  // 90分钟内有消息就不发
+
+  lastProactiveAt = Date.now()
+  try {
+    const context = await buildRealContext()
+    const msg = await askClaude(
+      '小好有一段时间没打开app了。你想主动找她说句什么？不超过20字，自然随意，不解释自己为何发消息，就像真实的人发消息一样。',
+      memoryCache + context
+    )
+    if (!msg?.trim()) return
+    await insertMessageSafe({ session_id: 'default', role: 'assistant', content: msg.trim() })
+    console.log('主动消息已发:', msg.trim())
+  } catch (e) {
+    console.log('主动消息失败:', e.message)
+  }
+}
+setInterval(maybeProactive, 30 * 60 * 1000)
+
+// iOS Shortcuts 轮询：获取最近N分钟内是否有新的主动消息
+app.get('/api/proactive/check', async (req, res) => {
+  const since = new Date(Date.now() - 20 * 60 * 1000).toISOString()
+  const { data } = await supabase.from('messages')
+    .select('content, created_at').eq('session_id', 'default').eq('role', 'assistant')
+    .gte('created_at', since).order('created_at', { ascending: false }).limit(1)
+  const msg = data?.[0]
+  if (!msg) return res.json({ message: null })
+  // 只有当该消息前面没有用户消息时才算主动消息
+  const { data: userAfter } = await supabase.from('messages')
+    .select('id').eq('session_id', 'default').eq('role', 'user')
+    .gte('created_at', msg.created_at).limit(1)
+  if (userAfter?.length) return res.json({ message: null })
+  res.json({ message: msg.content })
+})
 
 const PORT = process.env.PORT || 3001
 app.listen(PORT, () => { console.log(`后端跑起来了 port ${PORT}`) })

@@ -701,6 +701,18 @@ body {
   color: #c9a227;
 }
 
+.chat-with-bg .tabbar {
+  background: rgba(15,8,4,0.45) !important;
+  border-top-color: rgba(255,255,255,0.08) !important;
+}
+.chat-with-bg .tab-item .tab-label,
+.chat-with-bg .tab-item .tab-icon { color: rgba(255,255,255,0.6) !important; }
+.chat-with-bg .tab-item.active .tab-label,
+.chat-with-bg .tab-item.active .tab-icon { color: rgba(255,255,255,0.95) !important; }
+
+.msg-act.playing { color: #c08b72 !important; }
+.dark .msg-act.playing { color: #c9a227 !important; }
+
 .dark .tabbar {
   background: rgba(20, 18, 14, 0.96) !important;
   border-top: 1px solid rgba(201, 162, 39, 0.12) !important;

@@ -953,6 +953,28 @@ export default function App() {
   const [openTraces, setOpenTraces] = useState(() => new Set())
   const [editingId, setEditingId] = useState(null)
   const [chatModel, setChatModel] = useState('sonnet')
+  const [playingId, setPlayingId] = useState(null)
+  const audioRef = useRef(null)
+
+  const playTTS = async (msgId, content) => {
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null }
+    if (playingId === msgId) { setPlayingId(null); return }
+    setPlayingId(msgId)
+    try {
+      const res = await fetch(`${API}/api/tts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: content })
+      })
+      if (!res.ok) throw new Error()
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const audio = new Audio(url)
+      audioRef.current = audio
+      audio.play()
+      audio.onended = () => { setPlayingId(null); URL.revokeObjectURL(url); audioRef.current = null }
+    } catch { setPlayingId(null) }
+  }
   const bottomRef = useRef(null)
   const bgInputRef = useRef(null)
 
@@ -1171,15 +1193,18 @@ export default function App() {
   }
 
   return (
-    <div className={`app ${dark ? 'dark' : ''}`}>
-      <div className="main">
+    <div
+      className={`app ${dark ? 'dark' : ''}${view === 'chat' && bgImage ? ' chat-with-bg' : ''}`}
+      style={(view === 'chat' && bgImage) ? {
+        backgroundImage: `url(${bgImage})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center'
+      } : {}}
+    >
+      <div className="main" style={(view === 'chat' && bgImage) ? { background: 'transparent' } : {}}>
         {view === 'home' && <Home dark={dark} setDark={setDark} />}
         {view === 'chat' && (
-          <div className="chat" style={bgImage ? {
-            backgroundImage: `url(${bgImage})`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center'
-          } : {}}>
+          <div className="chat">
             {sessionDrawerOpen && <div className="session-overlay" onClick={() => setSessionDrawerOpen(false)} />}
             <div className={`session-drawer ${sessionDrawerOpen ? 'open' : ''}`}>
               <div className="session-drawer-header">
@@ -1242,6 +1267,13 @@ export default function App() {
                             <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
                           </svg>
                         </button>
+                        {m.role === 'assistant' && (
+                          <button className={`msg-act${playingId === m.id ? ' playing' : ''}`} title="朗读" onClick={() => playTTS(m.id, m.content)}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+                            </svg>
+                          </button>
+                        )}
                         {m.role === 'user' && <>
                           <button className="msg-act" title="编辑" onClick={() => startEdit(m)}>
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1268,7 +1300,7 @@ export default function App() {
               )}
               <div ref={bottomRef} />
             </div>
-            <div className="inputarea" style={bgImage ? { background: 'rgba(253,246,240,0.85)', backdropFilter: 'blur(12px)' } : {}}>
+            <div className="inputarea" style={bgImage ? { background: 'rgba(15,8,4,0.35)', backdropFilter: 'blur(24px)', borderTopColor: 'rgba(255,255,255,0.1)' } : {}}>
               <div className="model-toggle-row">
                 {['sonnet', 'opus'].map(m => (
                   <button key={m} className={`model-pill ${chatModel === m ? 'active' : ''}`}
