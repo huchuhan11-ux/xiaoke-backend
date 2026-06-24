@@ -101,6 +101,7 @@ function daysTogether() {
 
 function Heatmap({ dark }) {
   const [data, setData] = useState({})
+  const [vm, setVm] = useState(() => { const n = new Date(); return { y: n.getFullYear(), m: n.getMonth() } })
 
   useEffect(() => {
     fetch(`${API}/api/stats/heatmap`)
@@ -109,58 +110,50 @@ function Heatmap({ dark }) {
       .catch(() => {})
   }, [])
 
-  const start = new Date('2026-05-28')
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-
-  const days = []
-  const cur = new Date(start)
-  while (cur <= today) {
-    const dateStr = cur.toISOString().split('T')[0]
-    days.push({ date: dateStr, count: data[dateStr] || 0 })
-    cur.setDate(cur.getDate() + 1)
-  }
-
-  const maxCount = Math.max(...days.map(d => d.count), 1)
+  const START = new Date('2026-05-28')
+  const today = new Date(); today.setHours(0,0,0,0)
+  const todayStr = today.toISOString().split('T')[0]
+  const maxCount = Math.max(...Object.values(data).map(Number), 1)
 
   const getColor = (count) => {
-    if (count === 0) return dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.07)'
-    const intensity = Math.min(count / maxCount, 1)
-    if (dark) {
-      const alpha = 0.2 + intensity * 0.8
-      return `rgba(201,162,39,${alpha})`
-    } else {
-      const alpha = 0.15 + intensity * 0.85
-      return `rgba(192,139,114,${alpha})`
-    }
+    if (!count) return dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'
+    const t = Math.min(count / maxCount, 1)
+    return dark ? `rgba(201,162,39,${0.2 + t * 0.8})` : `rgba(192,139,114,${0.15 + t * 0.85})`
   }
 
-  const weeks = []
-  let week = []
-  const firstDay = new Date(start).getDay()
-  for (let i = 0; i < firstDay; i++) week.push(null)
-  days.forEach(day => {
-    week.push(day)
-    if (week.length === 7) { weeks.push(week); week = [] }
-  })
-  if (week.length > 0) {
-    while (week.length < 7) week.push(null)
-    weeks.push(week)
-  }
+  const prevM = () => setVm(v => v.m === 0 ? { y: v.y-1, m: 11 } : { ...v, m: v.m-1 })
+  const nextM = () => setVm(v => v.m === 11 ? { y: v.y+1, m: 0 } : { ...v, m: v.m+1 })
+
+  const firstDow = new Date(vm.y, vm.m, 1).getDay()
+  const daysInMonth = new Date(vm.y, vm.m+1, 0).getDate()
+  const MN = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月']
+  const DOW = ['日','一','二','三','四','五','六']
 
   return (
-    <div className="heatmap-wrap">
-      <div className="heatmap-label">DAYS TOGETHER</div>
-      <div className="heatmap-grid">
-        {weeks.map((wk, wi) => (
-          <div key={wi} className="heatmap-week">
-            {wk.map((day, di) => (
-              <div key={di} className="heatmap-cell"
-                style={{ background: day ? getColor(day.count) : 'transparent' }}
-              />
-            ))}
-          </div>
-        ))}
+    <div className="cal-wrap">
+      <div className="cal-header">
+        <button className="cal-nav" onClick={prevM}>‹</button>
+        <span className="cal-month-label">{vm.y} · {MN[vm.m]}</span>
+        <button className="cal-nav" onClick={nextM}>›</button>
+      </div>
+      <div className="cal-dow-row">{DOW.map(d => <span key={d} className="cal-dow">{d}</span>)}</div>
+      <div className="cal-grid">
+        {Array.from({ length: firstDow }, (_, i) => <div key={`b${i}`} className="cal-cell" />)}
+        {Array.from({ length: daysInMonth }, (_, i) => {
+          const day = i + 1
+          const d = new Date(vm.y, vm.m, day)
+          const ds = d.toISOString().split('T')[0]
+          const count = data[ds] || 0
+          const inRange = d >= START && d <= today
+          const isToday = ds === todayStr
+          return (
+            <div key={ds} className={`cal-cell${isToday ? ' cal-today' : ''}${inRange ? ' cal-in' : ''}`}
+              style={inRange ? { background: getColor(count) } : {}}>
+              <span className="cal-dn">{day}</span>
+              {inRange && count > 0 && <span className="cal-dot" />}
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -188,7 +181,7 @@ function Home({ dark }) {
   const [time, setTime] = useState(new Date())
   const [greeting, setGreeting] = useState('')
   const [msgCount, setMsgCount] = useState(null)
-  const [weather, setWeather] = useState(null)
+  const [weather, setWeather] = useState([])
   const [items, setItems] = useState([])
   const [adding, setAdding] = useState(false)
   const [title, setTitle] = useState('')
@@ -219,7 +212,7 @@ function Home({ dark }) {
     fetch(`${API}/api/stats/summary`).then(r => r.json()).then(d => setMsgCount(d.count ?? null)).catch(() => {})
     fetch(`${API}/api/countdowns`).then(r => r.json()).then(d => { if (Array.isArray(d)) setItems(d) }).catch(() => {})
     fetch(`${API}/api/wishes`).then(r => r.json()).then(d => { if (Array.isArray(d)) setWishes(d) }).catch(() => {})
-    fetch(`${API}/api/weather`).then(r => r.json()).then(d => { if (d.temp) setWeather(d) }).catch(() => {})
+    fetch(`${API}/api/weather`).then(r => r.json()).then(d => { if (Array.isArray(d)) setWeather(d) }).catch(() => {})
   }, [])
 
   const poke = async () => {
@@ -342,13 +335,19 @@ function Home({ dark }) {
       </div>
 
       {/* 天气 */}
-      {weather && (
+      {weather.length > 0 && (
         <div className="hv2-weather">
-          <span className="hv2-weather-icon">{weatherEmoji(weather.code)}</span>
-          <span className="hv2-weather-temp">{weather.temp}°</span>
-          <span className="hv2-weather-desc">{weather.desc}</span>
-          <span className="hv2-weather-city">{weather.city}</span>
-          <span className="hv2-weather-sub">体感 {weather.feelsLike}° · 湿度 {weather.humidity}%</span>
+          {weather.map(w => (
+            <div key={w.city} className="hv2-wc">
+              <div className="hv2-wc-city">{w.city}</div>
+              <div className="hv2-wc-main">
+                <span className="hv2-wc-icon">{weatherEmoji(w.code)}</span>
+                <span className="hv2-wc-temp">{w.temp}°</span>
+              </div>
+              <div className="hv2-wc-desc">{w.desc}</div>
+              <div className="hv2-wc-sub">体感 {w.feelsLike}° · {w.humidity}%</div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -757,7 +756,7 @@ function fmtDuration(s) {
   return `${h}小时${m % 60}分钟`
 }
 
-function Monitor() {
+function Monitor({ dark }) {
   const [usage, setUsage] = useState({})
   const [health, setHealth] = useState(null)
   const [healthMissing, setHealthMissing] = useState(false)
@@ -808,6 +807,11 @@ function Monitor() {
         ) : (
           !loading && <div className="monitor-empty">还没有今天的数据，多陪陪小克吧</div>
         )}
+      </div>
+
+      <div className="monitor-card monitor-card-cal">
+        <div className="monitor-card-title">聊天日历</div>
+        <Heatmap dark={dark} />
       </div>
 
       <div className="monitor-card">
@@ -1155,7 +1159,7 @@ export default function App() {
           </div>
         )}
         {view === 'records' && <Records />}
-        {view === 'monitor' && <Monitor />}
+        {view === 'monitor' && <Monitor dark={dark} />}
         {view === 'settings' && <Settings />}
       </div>
 

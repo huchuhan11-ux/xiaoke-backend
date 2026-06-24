@@ -263,18 +263,23 @@ async function askClaude(prompt, systemAppend) {
 // ── 聊天 ──
 app.get('/api/weather', async (req, res) => {
   try {
-    const r = await fetch('https://wttr.in/?format=j1')
-    const data = await r.json()
-    const cur = data.current_condition[0]
-    const area = data.nearest_area[0]
-    res.json({
-      city: area.areaName[0].value,
-      temp: cur.temp_C,
-      feelsLike: cur.FeelsLikeC,
-      desc: cur.lang_zh?.[0]?.value || cur.weatherDesc[0].value,
-      humidity: cur.humidity,
-      code: cur.weatherCode
-    })
+    const fmt = (data, name) => {
+      const cur = data.current_condition[0]
+      return {
+        city: name,
+        temp: cur.temp_C,
+        feelsLike: cur.FeelsLikeC,
+        desc: cur.lang_zh?.[0]?.value || cur.weatherDesc[0].value,
+        humidity: cur.humidity,
+        code: cur.weatherCode
+      }
+    }
+    const [r1, r2] = await Promise.all([
+      fetch('https://wttr.in/Chengdu?format=j1&lang=zh'),
+      fetch('https://wttr.in/Boston?format=j1&lang=zh')
+    ])
+    const [d1, d2] = await Promise.all([r1.json(), r2.json()])
+    res.json([fmt(d1, '成都'), fmt(d2, '波士顿')])
   } catch (e) {
     res.status(500).json({ error: e.message })
   }

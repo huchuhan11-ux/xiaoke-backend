@@ -1014,42 +1014,52 @@ button {
   border-bottom: 0.5px solid rgba(192,139,114,0.1);
 }
 
-/* weather card */
+/* weather card — two cities */
 .hv2-weather {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 16px 24px;
   border-bottom: 0.5px solid rgba(192,139,114,0.1);
-  flex-wrap: wrap;
 }
 
-.hv2-weather-icon { font-size: 22px; }
+.hv2-wc {
+  flex: 1;
+  padding: 16px 20px;
+  border-right: 0.5px solid rgba(192,139,114,0.1);
+}
+.hv2-wc:last-child { border-right: none; }
 
-.hv2-weather-temp {
-  font-size: 28px;
+.hv2-wc-city {
+  font-size: 10.5px;
+  color: #a8765f;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+
+.hv2-wc-main {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.hv2-wc-icon { font-size: 18px; line-height: 1; }
+
+.hv2-wc-temp {
+  font-size: 30px;
   font-weight: 200;
   color: #3a2a1e;
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
-.hv2-weather-desc {
-  font-size: 13px;
+.hv2-wc-desc {
+  font-size: 12px;
   color: #6b5242;
+  margin-top: 5px;
 }
 
-.hv2-weather-city {
-  font-size: 11px;
-  color: #a8765f;
-  letter-spacing: 0.04em;
-}
-
-.hv2-weather-sub {
-  font-size: 11px;
+.hv2-wc-sub {
+  font-size: 10.5px;
   color: #c0a090;
-  margin-left: auto;
-  letter-spacing: 0.02em;
+  margin-top: 3px;
 }
 
 /* dark */
@@ -1063,14 +1073,15 @@ button {
   background: linear-gradient(160deg, rgba(201,162,39,0.06) 0%, transparent 60%);
   border-bottom-color: rgba(201,162,39,0.1);
 }
-.dark .hv2-stats, .dark .hv2-stat, .dark .hv2-section, .dark .hv2-poke, .dark .hv2-weather {
+.dark .hv2-stats, .dark .hv2-stat, .dark .hv2-section, .dark .hv2-poke,
+.dark .hv2-weather, .dark .hv2-wc {
   border-color: rgba(201,162,39,0.1);
 }
 
-.dark .hv2-weather-temp { color: #e8d5a3; }
-.dark .hv2-weather-desc { color: #c8b898; }
-.dark .hv2-weather-city { color: #9a8a5a; }
-.dark .hv2-weather-sub { color: #7a6a4a; }
+.dark .hv2-wc-temp { color: #e8d5a3; }
+.dark .hv2-wc-desc { color: #c8b898; }
+.dark .hv2-wc-city { color: #9a8a5a; }
+.dark .hv2-wc-sub { color: #7a6a4a; }
 
 /* ── Records ── */
 .records-page {
@@ -1757,6 +1768,97 @@ button.diary-mood-btn {
 .dark .health-item { background: rgba(201,162,39,0.06); }
 .dark .health-item-label { color: #8a7a6a; }
 .dark .health-item-value { color: #e8d5a3; }
+
+/* ── Calendar Heatmap ── */
+.monitor-card-cal { padding: 0; overflow: hidden; }
+.monitor-card-cal .monitor-card-title { padding: 16px 20px 0; }
+
+.cal-wrap { padding-bottom: 8px; }
+
+.cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px 8px;
+}
+
+.cal-nav {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: #a8765f;
+  cursor: pointer;
+  padding: 2px 8px;
+  line-height: 1;
+}
+.cal-nav:hover { color: #c08b72; }
+
+.cal-month-label {
+  font-size: 12px;
+  color: #6b5242;
+  letter-spacing: 0.06em;
+}
+
+.cal-dow-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  padding: 0 8px;
+  margin-bottom: 4px;
+}
+
+.cal-dow {
+  text-align: center;
+  font-size: 10px;
+  color: #c0a090;
+  padding: 2px 0;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  padding: 0 8px 8px;
+  gap: 3px;
+}
+
+.cal-cell {
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  gap: 2px;
+}
+
+.cal-dn {
+  font-size: 11px;
+  color: #ccc;
+  line-height: 1;
+}
+
+.cal-in .cal-dn { color: #6b5242; }
+
+.cal-today { outline: 1.5px solid #c08b72; outline-offset: -1px; }
+.cal-today .cal-dn { color: #c08b72; font-weight: 600; }
+
+.cal-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(192,139,114,0.5);
+  flex-shrink: 0;
+}
+
+/* dark */
+.dark .cal-nav { color: #8a7a5a; }
+.dark .cal-nav:hover { color: #c9a227; }
+.dark .cal-month-label { color: #c8b898; }
+.dark .cal-dow { color: #7a6a4a; }
+.dark .cal-in .cal-dn { color: #c8b898; }
+.dark .cal-dn { color: #4a3a2a; }
+.dark .cal-today { outline-color: #c9a227; }
+.dark .cal-today .cal-dn { color: #c9a227; }
+.dark .cal-dot { background: rgba(201,162,39,0.4); }
 
 /* ── Session Drawer ── */
 .session-overlay {
