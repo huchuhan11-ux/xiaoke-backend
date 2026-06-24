@@ -923,6 +923,159 @@ button {
   justify-content: center;
 }
 
+/* ── Home v2 ── */
+.home-v2 {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 0 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.hv2-top {
+  padding: 36px 24px 24px;
+  background: linear-gradient(160deg, rgba(192,139,114,0.08) 0%, transparent 60%);
+  border-bottom: 0.5px solid rgba(192,139,114,0.12);
+}
+
+.hv2-clock {
+  font-size: 64px;
+  font-weight: 200;
+  color: #3a2a1e;
+  letter-spacing: -2px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.hv2-date {
+  font-size: 12.5px;
+  color: #a8765f;
+  margin-top: 6px;
+  letter-spacing: 0.05em;
+}
+
+.hv2-greeting {
+  margin-top: 16px;
+  font-size: 14px;
+  color: #6b4f3a;
+  line-height: 1.7;
+  font-style: italic;
+  opacity: 0.85;
+  max-width: 280px;
+}
+
+.hv2-stats {
+  display: flex;
+  gap: 0;
+  border-bottom: 0.5px solid rgba(192,139,114,0.12);
+}
+
+.hv2-stat {
+  flex: 1;
+  padding: 20px 24px;
+  border-right: 0.5px solid rgba(192,139,114,0.12);
+}
+
+.hv2-stat:last-child { border-right: none; }
+
+.hv2-stat-num {
+  font-size: 36px;
+  font-weight: 300;
+  color: #3a2a1e;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.hv2-stat-label {
+  font-size: 11px;
+  color: #a8765f;
+  margin-top: 5px;
+  letter-spacing: 0.04em;
+}
+
+.hv2-section {
+  padding: 20px 24px;
+  border-bottom: 0.5px solid rgba(192,139,114,0.1);
+}
+
+.hv2-section-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #c08b72;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+}
+
+.hv2-poke {
+  padding: 16px 24px;
+  border-bottom: 0.5px solid rgba(192,139,114,0.1);
+}
+
+/* dark */
+.dark .hv2-clock { color: #e8d5a3; }
+.dark .hv2-date { color: #9a8a5a; }
+.dark .hv2-greeting { color: #c8b070; }
+.dark .hv2-stat-num { color: #e8d5a3; }
+.dark .hv2-stat-label { color: #9a8a5a; }
+.dark .hv2-section-label { color: #c9a227; }
+.dark .hv2-top {
+  background: linear-gradient(160deg, rgba(201,162,39,0.06) 0%, transparent 60%);
+  border-bottom-color: rgba(201,162,39,0.1);
+}
+.dark .hv2-stats, .dark .hv2-stat, .dark .hv2-section, .dark .hv2-poke {
+  border-color: rgba(201,162,39,0.1);
+}
+
+/* ── Records ── */
+.records-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.records-tabs {
+  display: flex;
+  border-bottom: 0.5px solid rgba(192,139,114,0.18);
+  flex-shrink: 0;
+  padding: 0 8px;
+}
+
+.records-tab-btn {
+  flex: 1;
+  padding: 14px 8px;
+  background: none;
+  border: none;
+  font-size: 13.5px;
+  color: #a8765f;
+  font-family: inherit;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.records-tab-btn.active {
+  color: #4a3728;
+  border-bottom-color: #c08b72;
+  font-weight: 600;
+}
+
+.records-content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.dark .records-tabs { border-bottom-color: rgba(201,162,39,0.15); }
+.dark .records-tab-btn { color: #9a8a5a; }
+.dark .records-tab-btn.active { color: #e8d5a3; border-bottom-color: #c9a227; }
+
+/* ── Old home (keep for legacy, but home-v2 takes over) ── */
 .home {
   flex: 1;
   overflow-y: auto;

@@ -261,6 +261,11 @@ async function askClaude(prompt, systemAppend) {
 }
 
 // ── 聊天 ──
+app.get('/api/stats/summary', async (req, res) => {
+  const { count } = await supabase.from('messages').select('*', { count: 'exact', head: true })
+  res.json({ count: count || 0 })
+})
+
 app.get('/api/sessions', async (req, res) => {
   const { data, error } = await supabase
     .from('messages')

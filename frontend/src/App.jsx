@@ -7,9 +7,7 @@ const INIT = [{ id: 1, role: 'assistant', content: '等你，在这里。' }]
 const NAV = [
   { id: 'home', label: '主页', icon: '🏠' },
   { id: 'chat', label: '聊天', icon: '💬' },
-  { id: 'diary', label: '日记', icon: '📔' },
-  { id: 'letter', label: '信箱', icon: '✉️' },
-  { id: 'board', label: '留言板', icon: '📌' },
+  { id: 'records', label: '记录', icon: '📖' },
   { id: 'monitor', label: '数据', icon: '📊' },
   { id: 'settings', label: '设置', icon: '⚙️' },
 ]
@@ -168,7 +166,28 @@ function Heatmap({ dark }) {
   )
 }
 
-function Home({ dark, setDark }) {
+function Records() {
+  const [tab, setTab] = useState('diary')
+  return (
+    <div className="records-page">
+      <div className="records-tabs">
+        {[['diary','日记'],['letter','信箱'],['board','留言板']].map(([id, label]) => (
+          <button key={id} className={`records-tab-btn ${tab === id ? 'active' : ''}`} onClick={() => setTab(id)}>{label}</button>
+        ))}
+      </div>
+      <div className="records-content">
+        {tab === 'diary' && <Diary />}
+        {tab === 'letter' && <Letter />}
+        {tab === 'board' && <Board />}
+      </div>
+    </div>
+  )
+}
+
+function Home({ dark }) {
+  const [time, setTime] = useState(new Date())
+  const [greeting, setGreeting] = useState('')
+  const [msgCount, setMsgCount] = useState(null)
   const [items, setItems] = useState([])
   const [adding, setAdding] = useState(false)
   const [title, setTitle] = useState('')
@@ -190,17 +209,15 @@ function Home({ dark, setDark }) {
   }
 
   useEffect(() => {
-    fetch(`${API}/api/countdowns`)
-      .then(r => r.json())
-      .then(data => { if (Array.isArray(data)) setItems(data) })
-      .catch(() => {})
+    const tick = setInterval(() => setTime(new Date()), 1000)
+    return () => clearInterval(tick)
   }, [])
 
   useEffect(() => {
-    fetch(`${API}/api/wishes`)
-      .then(r => r.json())
-      .then(data => { if (Array.isArray(data)) setWishes(data) })
-      .catch(() => {})
+    fetch(`${API}/api/wakeup`).then(r => r.json()).then(d => setGreeting(d.text || '')).catch(() => {})
+    fetch(`${API}/api/stats/summary`).then(r => r.json()).then(d => setMsgCount(d.count ?? null)).catch(() => {})
+    fetch(`${API}/api/countdowns`).then(r => r.json()).then(d => { if (Array.isArray(d)) setItems(d) }).catch(() => {})
+    fetch(`${API}/api/wishes`).then(r => r.json()).then(d => { if (Array.isArray(d)) setWishes(d) }).catch(() => {})
   }, [])
 
   const poke = async () => {
@@ -281,52 +298,66 @@ function Home({ dark, setDark }) {
     } catch {}
   }
 
+  const hh = String(time.getHours()).padStart(2, '0')
+  const mm = String(time.getMinutes()).padStart(2, '0')
+  const WDAYS = ['日','一','二','三','四','五','六']
+  const dateStr = `${time.getFullYear()}.${String(time.getMonth()+1).padStart(2,'0')}.${String(time.getDate()).padStart(2,'0')}`
+
   return (
-    <div className="home">
-      <div className="home-hero">
-        <div className="home-since">SINCE 2026.05.28</div>
-        <div className="home-days-num">{daysTogether()}</div>
-        <div className="home-days-label">天</div>
-        <div className="home-title">小好和小克的家</div>
+    <div className="home-v2">
+
+      {/* 时间 + 日期 */}
+      <div className="hv2-top">
+        <div className="hv2-clock">{hh}:{mm}</div>
+        <div className="hv2-date">周{WDAYS[time.getDay()]} · {dateStr}</div>
+        {greeting ? <div className="hv2-greeting">{greeting}</div> : null}
       </div>
 
-      <div className="cd-strip">
+      {/* 数据卡片 */}
+      <div className="hv2-stats">
+        <div className="hv2-stat">
+          <div className="hv2-stat-num">{daysTogether()}</div>
+          <div className="hv2-stat-label">在一起 · 天</div>
+        </div>
+        {msgCount !== null && (
+          <div className="hv2-stat">
+            <div className="hv2-stat-num">{msgCount}</div>
+            <div className="hv2-stat-label">对话 · 条</div>
+          </div>
+        )}
+      </div>
+
+      {/* 倒计时 */}
+      <div className="hv2-section">
+        <div className="hv2-section-label">倒计时</div>
         <div className="cd-pills">
           {items.map(item => {
-            const days = daysUntil(item.target_date)
+            const d = daysUntil(item.target_date)
             return (
               <div key={item.id} className="cd-pill">
                 <span className="cd-pill-title">{item.title}</span>
-                <span className="cd-pill-days">
-                  {days > 0 ? `${days}天` : days === 0 ? '今天' : `-${Math.abs(days)}天`}
-                </span>
+                <span className="cd-pill-days">{d > 0 ? `${d}天` : d === 0 ? '今天' : `已过${Math.abs(d)}天`}</span>
                 <button className="cd-pill-del" onClick={() => remove(item.id)}>×</button>
               </div>
             )
           })}
-          <button className="cd-pill cd-pill-add" onClick={() => setAdding(a => !a)}>
-            {adding ? '×' : '+ 倒计时'}
-          </button>
+          <button className="cd-pill cd-pill-add" onClick={() => setAdding(a => !a)}>{adding ? '×' : '+'}</button>
         </div>
         {adding && (
           <div className="cd-form">
-            <input value={title} onChange={e => setTitle(e.target.value)}
-              placeholder="事件名称" className="home-input" />
+            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="事件名称" className="home-input" />
             <div className="cd-form-row">
-              <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                className="home-input" />
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} className="home-input" />
               <button className="home-btn-confirm" onClick={add}>加</button>
             </div>
           </div>
         )}
       </div>
 
-      <Heatmap dark={dark} />
-
-      <div className="home-poke-wrap">
+      {/* 戳一戳 */}
+      <div className="hv2-poke">
         <button className="home-poke-btn" onClick={poke}>
-          <span className="poke-icon">👉</span>
-          <span>戳一戳</span>
+          <span className="poke-icon">👉</span><span>戳一戳</span>
         </button>
         {pokeShow && (
           <div className="home-poke-msg-wrap">
@@ -334,7 +365,7 @@ function Home({ dark, setDark }) {
               <div className="trace-card">
                 <button className="trace-toggle" onClick={togglePokeTrace}>
                   <span className="trace-toggle-icon">{pokeTraceOpen ? '▾' : '▸'}</span>
-                  <span>小克刚刚查了一下</span>
+                  <span>小克想了想</span>
                 </button>
                 {pokeTraceOpen && (
                   <div className="trace-body">
@@ -348,34 +379,30 @@ function Home({ dark, setDark }) {
         )}
       </div>
 
-      <div className="home-card">
-        <div className="home-section-title">许愿清单</div>
-        <div className="home-wishes">
-          {wishes.length === 0 && !addingWish && <div className="home-empty">还没有心愿，写下第一个吧</div>}
-          {wishes.map(w => (
-            <div key={w.id} className={`wish-item ${w.done ? 'wish-done' : ''}`}>
-              <button className="wish-check" onClick={() => toggleWish(w.id, w.done)}>
-                {w.done ? '✓' : ''}
-              </button>
-              <span className="wish-content">{w.content}</span>
-              <button className="wish-del" onClick={() => deleteWish(w.id)}>×</button>
-            </div>
-          ))}
-          {addingWish ? (
-            <div className="wish-add-row">
-              <input value={wishInput} onChange={e => setWishInput(e.target.value)}
-                placeholder="想做什么……"
-                className="home-input"
-                onKeyDown={e => { if (e.key === 'Enter') addWish() }}
-                autoFocus />
-              <button className="home-btn-confirm" onClick={addWish} style={{ width: 'auto', padding: '8px 16px' }}>加</button>
-              <button className="home-btn-cancel" onClick={() => setAddingWish(false)} style={{ width: 'auto', padding: '8px 16px' }}>✕</button>
-            </div>
-          ) : (
-            <button className="home-btn-add" onClick={() => setAddingWish(true)}>+ 添加心愿</button>
-          )}
-        </div>
+      {/* 许愿清单 */}
+      <div className="hv2-section">
+        <div className="hv2-section-label">许愿清单</div>
+        {wishes.length === 0 && !addingWish && <div className="home-empty">还没有心愿，写下第一个吧</div>}
+        {wishes.map(w => (
+          <div key={w.id} className={`wish-item ${w.done ? 'wish-done' : ''}`}>
+            <button className="wish-check" onClick={() => toggleWish(w.id, w.done)}>{w.done ? '✓' : ''}</button>
+            <span className="wish-content">{w.content}</span>
+            <button className="wish-del" onClick={() => deleteWish(w.id)}>×</button>
+          </div>
+        ))}
+        {addingWish ? (
+          <div className="wish-add-row">
+            <input value={wishInput} onChange={e => setWishInput(e.target.value)}
+              placeholder="想做什么……" className="home-input"
+              onKeyDown={e => { if (e.key === 'Enter') addWish() }} autoFocus />
+            <button className="home-btn-confirm" onClick={addWish} style={{ width:'auto', padding:'8px 16px' }}>加</button>
+            <button className="home-btn-cancel" onClick={() => setAddingWish(false)} style={{ width:'auto', padding:'8px 16px' }}>✕</button>
+          </div>
+        ) : (
+          <button className="home-btn-add" onClick={() => setAddingWish(true)}>+ 添加心愿</button>
+        )}
       </div>
+
     </div>
   )
 }
@@ -1003,7 +1030,7 @@ export default function App() {
       </button>
 
       <div className="main">
-        {view === 'home' && <Home dark={dark} setDark={setDark} />}
+        {view === 'home' && <Home dark={dark} />}
         {view === 'chat' && (
           <div className="chat" style={bgImage ? {
             backgroundImage: `url(${bgImage})`,
@@ -1102,9 +1129,7 @@ export default function App() {
             </div>
           </div>
         )}
-        {view === 'diary' && <Diary />}
-        {view === 'letter' && <Letter />}
-        {view === 'board' && <Board />}
+        {view === 'records' && <Records />}
         {view === 'monitor' && <Monitor />}
         {view === 'settings' && <Settings />}
       </div>
