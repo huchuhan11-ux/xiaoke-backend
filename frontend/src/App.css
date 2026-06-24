@@ -1053,6 +1053,13 @@ button {
   margin-top: 3px;
 }
 
+.hv2-bc-wxmeta {
+  font-size: 9px;
+  color: #b09a8a;
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
 .hv2-bc-wxsub {
   font-size: 10px;
   color: #b09a8a;
@@ -1159,6 +1166,14 @@ button {
   text-transform: uppercase;
   margin-bottom: 14px;
 }
+
+.hv2-section-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.hv2-section-hd .hv2-section-label { margin-bottom: 0; }
 
 .hv2-poke {
   padding: 16px 24px;
@@ -2009,9 +2024,25 @@ button.diary-mood-btn {
   margin-top: 4px;
 }
 
+.settings-usage-unit {
+  font-size: 10px;
+  color: #b09a8a;
+  margin-top: 2px;
+}
+
+.settings-usage-note {
+  font-size: 11px;
+  color: #b09a8a;
+  text-align: center;
+  padding: 12px 16px 0;
+}
+
 .dark .settings-usage-item { background: rgba(201,162,39,0.08); }
 .dark .settings-usage-num { color: #e8d5a3; }
 .dark .settings-usage-lbl { color: #9a8a5a; }
+.dark .settings-usage-unit { color: #7a6a4a; }
+.dark .settings-usage-note { color: #7a6a4a; }
+.dark .hv2-bc-wxmeta { color: #7a6a4a; }
 
 /* ── Calendar Heatmap ── */
 .monitor-card-cal { padding: 0; overflow: hidden; }

@@ -89,10 +89,8 @@ function Settings({ dark, setDark }) {
 
   useEffect(() => {
     if (subview !== 'usage') return
-    Promise.all([
-      fetch(`${API}/api/stats/summary`).then(r => r.json()).catch(() => ({})),
-      fetch(`${API}/api/usage`).then(r => r.json()).catch(() => ({})),
-    ]).then(([s, u]) => setUsageData({ count: s.count ?? '—', pages: u.pages || {} }))
+    fetch(`${API}/api/stats/summary`).then(r => r.json()).catch(() => ({}))
+      .then(s => setUsageData({ count: s.count ?? '—' }))
   }, [subview])
 
   const set = (key, val) => setPrefs(p => ({ ...p, [key]: val }))
@@ -120,8 +118,6 @@ function Settings({ dark, setDark }) {
   const editLabel = (id, label) => persistStyles(styles.map(s => s.id === id ? { ...s, label } : s))
 
   if (subview === 'usage') {
-    const pages = usageData?.pages || {}
-    const totalSec = Object.values(pages).reduce((sum, v) => sum + (v || 0), 0)
     return (
       <div className="prefs-page">
         <button className="prefs-back" onClick={() => setSubview(null)}>‹ 设置</button>
@@ -132,18 +128,12 @@ function Settings({ dark, setDark }) {
             <div className="settings-usage-lbl">累计消息</div>
           </div>
           <div className="settings-usage-item">
-            <div className="settings-usage-num">{totalSec > 0 ? fmtDuration(totalSec) : '—'}</div>
-            <div className="settings-usage-lbl">今日用时</div>
+            <div className="settings-usage-num">{daysTogether()}</div>
+            <div className="settings-usage-lbl">在一起</div>
+            <div className="settings-usage-unit">天</div>
           </div>
         </div>
-        <div className="settings-list" style={{ marginTop: 20 }}>
-          {Object.keys(PAGE_META).map(k => (
-            <div key={k} className="settings-row" style={{ cursor: 'default' }}>
-              <span className="settings-row-label">{PAGE_META[k].icon} {PAGE_META[k].label}</span>
-              <span className="settings-row-val">{pages[k] ? fmtDuration(pages[k]) : '—'}</span>
-            </div>
-          ))}
-        </div>
+        <div className="settings-usage-note">由 Claude 订阅驱动</div>
       </div>
     )
   }
@@ -664,7 +654,7 @@ function Home({ dark, setDark }) {
         {greeting ? <div className="hv2-greeting">{greeting}</div> : null}
       </div>
 
-      {/* 四格 bento：统计 / 双城天气 / 倒计时 */}
+      {/* 四格 bento：统计 + 双城天气各自独立 */}
       <div className="hv2-bento">
         <div className="hv2-bc">
           <div className="hv2-bc-lbl">在一起</div>
@@ -676,50 +666,52 @@ function Home({ dark, setDark }) {
           <div className="hv2-bc-num">{msgCount ?? '—'}</div>
           <div className="hv2-bc-unit">条</div>
         </div>
-
-        {/* 左下：双城天气叠放 */}
-        <div className="hv2-bc hv2-bc-wx2">
-          {weather.length > 0 ? weather.map((w, i) => (
-            <div key={w.city} className={i > 0 ? 'hv2-wx2-sep' : ''}>
-              <div className="hv2-bc-lbl">{w.city}</div>
-              <div className="hv2-bc-wx-row">
-                <span className="hv2-bc-wxicon">{weatherEmoji(w.code)}</span>
-                <span className="hv2-bc-temp">{w.temp}°</span>
-              </div>
-              <div className="hv2-bc-wxsub">{w.desc}</div>
+        {weather.length > 0 ? weather.map(w => (
+          <div key={w.city} className="hv2-bc hv2-bc-wx">
+            <div className="hv2-bc-lbl">{w.city}</div>
+            <div className="hv2-bc-wx-row">
+              <span className="hv2-bc-wxicon">{weatherEmoji(w.code)}</span>
+              <span className="hv2-bc-temp">{w.temp}°</span>
             </div>
-          )) : <div className="hv2-bc-lbl" style={{ opacity: 0.4 }}>天气…</div>}
-        </div>
+            <div className="hv2-bc-wxdesc">{w.desc}</div>
+            <div className="hv2-bc-wxmeta">体感 {w.feelsLike}° · {w.humidity}% · UV {w.uvIndex}</div>
+          </div>
+        )) : (
+          <>
+            <div className="hv2-bc"><div className="hv2-bc-lbl" style={{ opacity: 0.4 }}>天气…</div></div>
+            <div className="hv2-bc"><div className="hv2-bc-lbl" style={{ opacity: 0.4 }}>天气…</div></div>
+          </>
+        )}
+      </div>
 
-        {/* 右下：倒计时 */}
-        <div className="hv2-bc hv2-bc-cd">
-          <div className="hv2-bc-cd-header">
-            <span className="hv2-bc-lbl">倒计时</span>
-            <button className="hv2-cd-add-btn" onClick={() => setAdding(a => !a)}>{adding ? '×' : '+'}</button>
-          </div>
-          <div className="hv2-cd-list">
-            {items.map(item => {
-              const d = daysUntil(item.target_date)
-              return (
-                <div key={item.id} className="hv2-cd-row">
-                  <span className="hv2-cd-title">{item.title}</span>
-                  <span className="hv2-cd-days">{d > 0 ? `${d}天` : d === 0 ? '今天' : `已${Math.abs(d)}天`}</span>
-                  <button className="hv2-cd-del" onClick={() => remove(item.id)}>×</button>
-                </div>
-              )
-            })}
-          </div>
-          {adding && (
-            <div className="hv2-cd-form">
-              <input value={title} onChange={e => setTitle(e.target.value)} placeholder="事件名称"
-                className="hv2-cd-input" autoFocus />
-              <div className="hv2-cd-frow">
-                <input type="date" value={date} onChange={e => setDate(e.target.value)} className="hv2-cd-input" />
-                <button className="hv2-cd-confirm" onClick={add}>加</button>
-              </div>
-            </div>
-          )}
+      {/* 倒计时 */}
+      <div className="hv2-section">
+        <div className="hv2-section-hd">
+          <div className="hv2-section-label">倒计时</div>
+          <button className="hv2-cd-add-btn" onClick={() => setAdding(a => !a)}>{adding ? '×' : '+'}</button>
         </div>
+        <div className="hv2-cd-list">
+          {items.map(item => {
+            const d = daysUntil(item.target_date)
+            return (
+              <div key={item.id} className="hv2-cd-row">
+                <span className="hv2-cd-title">{item.title}</span>
+                <span className="hv2-cd-days">{d > 0 ? `${d}天` : d === 0 ? '今天' : `已${Math.abs(d)}天`}</span>
+                <button className="hv2-cd-del" onClick={() => remove(item.id)}>×</button>
+              </div>
+            )
+          })}
+        </div>
+        {adding && (
+          <div className="hv2-cd-form">
+            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="事件名称"
+              className="hv2-cd-input" autoFocus />
+            <div className="hv2-cd-frow">
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} className="hv2-cd-input" />
+              <button className="hv2-cd-confirm" onClick={add}>加</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 戳一戳 */}

@@ -267,7 +267,8 @@ app.get('/api/weather', async (req, res) => {
         feelsLike: cur.FeelsLikeC,
         desc: cur.lang_zh?.[0]?.value || cur.weatherDesc[0].value,
         humidity: cur.humidity,
-        code: cur.weatherCode
+        code: cur.weatherCode,
+        uvIndex: cur.uvIndex || 0
       }
     }
     const [r1, r2] = await Promise.all([
@@ -544,9 +545,31 @@ async function refreshWakeupCache() {
   }
 }
 
+// ── 主页问候语：时间感知，与晨间唤醒音频分离 ──
+const GREETING_FALLBACK = '在这里。'
+let greetingCache = GREETING_FALLBACK
+let greetingRefreshing = false
+async function refreshGreetingCache() {
+  if (greetingRefreshing) return
+  greetingRefreshing = true
+  try {
+    const context = await buildRealContext()
+    const raw = await askClaude(
+      '小好打开了主页。根据现在的时间和氛围，给她说一句话，不超过15个字，中英文都行，不要空洞问候，有你的个性。',
+      memoryCache + context
+    )
+    if (raw && raw.trim()) greetingCache = raw.trim()
+  } catch (e) {
+    console.log('GREETING GEN ERROR:', e.message)
+  } finally {
+    greetingRefreshing = false
+  }
+}
+refreshGreetingCache()
+
 app.get('/api/wakeup', (req, res) => {
-  res.json({ text: wakeupCache })
-  refreshWakeupCache()
+  res.json({ text: greetingCache })
+  refreshGreetingCache()
 })
 
 app.get('/api/wakeup-audio', async (req, res) => {
