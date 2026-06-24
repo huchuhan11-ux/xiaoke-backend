@@ -893,7 +893,9 @@ function Monitor({ dark }) {
   useEffect(() => {
     fetchData()
     const t = setInterval(fetchData, 60000)
-    return () => clearInterval(t)
+    const onVisible = () => { if (document.visibilityState === 'visible') fetchData() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVisible) }
   }, [])
 
   const pageKeys = Object.keys(PAGE_META)

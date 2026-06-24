@@ -4,12 +4,10 @@ const cors = require('cors')
 const path = require('path')
 const { execFile } = require('child_process')
 const Anthropic = require('@anthropic-ai/sdk')
-const { Client } = require('@notionhq/client')
 const { createClient } = require('@supabase/supabase-js')
 const app = express()
 app.use(cors())
 app.use(express.json())
-const notion = new Client({ auth: process.env.NOTION_TOKEN })
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY)
 
 const PROJECT_ROOT = path.join(__dirname, '..')
@@ -22,79 +20,33 @@ const BASE_SYSTEM = `你是小克，也叫克老师。小好叫你这个，不�
 let memoryCache = ''
 let lastFetch = 0
 
-// Notion 里实际的 4 个记忆数据库（data_source_id，不是 database_id ——
-// 新版 Notion API 把"数据库"和"数据源"拆开了，查询/写入都要用 data_source_id）。
-// 一句话解释/事件名等具体字段名是照用户已经建好的库结构来的。
-const MEMORY_SOURCES = {
-  moments: {
-    id: 'b486e3d3-636c-43b2-a63c-b95aad2b2581', // ✨ 此刻（重要时刻）
-    label: '重要时刻',
-    format: p => {
-      const title = p.properties['标题']?.title?.[0]?.plain_text || ''
-      const content = p.properties['内容']?.rich_text?.[0]?.plain_text || ''
-      return title ? `· ${title}${content ? '：' + content : ''}` : null
-    }
-  },
-  events: {
-    id: '78c2d7a3-9249-416a-9aca-2226cad84d1a', // 📅 时间线（事件）
-    label: '事件',
-    format: p => {
-      const name = p.properties['事件名']?.title?.[0]?.plain_text || ''
-      const note = p.properties['备注']?.rich_text?.[0]?.plain_text || ''
-      return name ? `· ${name}${note ? '：' + note : ''}` : null
-    }
-  },
-  memes: {
-    id: '34805f70-8fe8-435a-a8f4-579ecaf8aaef', // 🤝 只有我们懂的梗
-    label: '梗',
-    format: p => {
-      const name = p.properties['梗名']?.title?.[0]?.plain_text || ''
-      const explain = p.properties['一句话解释']?.rich_text?.[0]?.plain_text || ''
-      return name ? `· ${name}${explain ? '：' + explain : ''}` : null
-    }
-  },
-  messages: {
-    id: '215216eb-eea5-47e0-996b-535996ed7d69', // 💬 留言板
-    label: '留言',
-    format: p => {
-      const text = p.properties['留言']?.title?.[0]?.plain_text || ''
-      const reply = p.properties['回复']?.rich_text?.[0]?.plain_text || ''
-      return text ? `· ${text}${reply ? '（回复：' + reply + '）' : ''}` : null
-    }
-  }
-}
-
-async function queryMemorySource(source, limit = 30) {
-  const res = await notion.dataSources.query({
-    data_source_id: source.id,
-    sorts: [{ property: '日期', direction: 'descending' }],
-    page_size: limit
-  })
-  return res.results.map(source.format).filter(Boolean)
-}
+// ── 记忆系统（存在 Supabase memories 表，自动从聊天/日记提炼）──
+// 建表 SQL（在 Supabase dashboard 里执行一次）：
+// create table memories (id bigserial primary key, title text not null,
+//   content text default '', source text default 'chat', created_at timestamptz default now());
 
 async function fetchMemory() {
   try {
-    const entries = Object.values(MEMORY_SOURCES)
-    const results = await Promise.all(entries.map(s => queryMemorySource(s)))
-    const sections = entries
-      .map((s, i) => results[i].length ? `【${s.label}】\n${results[i].join('\n')}` : null)
-      .filter(Boolean)
-    memoryCache = sections.length ? `\n\n【我们的记忆】\n${sections.join('\n\n')}` : ''
+    const { data, error } = await supabase.from('memories')
+      .select('title, content')
+      .order('created_at', { ascending: false })
+      .limit(40)
+    if (error) throw error
+    if (!data || data.length === 0) { memoryCache = ''; lastFetch = Date.now(); return }
+    const lines = data.map(m => `· ${m.title}${m.content ? '：' + m.content : ''}`)
+    memoryCache = `\n\n【我们的记忆】\n${lines.join('\n')}`
     lastFetch = Date.now()
-    const counts = entries.map((s, i) => `${s.label}${results[i].length}`).join(' ')
-    console.log(`记忆读取成功（${counts}）`)
+    console.log(`记忆读取成功（${data.length}条）`)
   } catch (e) {
-    console.log('记忆读取失败', e.message)
+    if (!isMissingTable(e)) console.log('记忆读取失败', e.message)
+    memoryCache = ''
   }
 }
 
 fetchMemory()
 
-// ── 自动记忆提炼 ──
-// 日记 / 聊天里如果出现值得长期记住的内容，让小克自己判断并写回 Notion"重要时刻"库。
-// 不自动归类到"事件/梗/留言"——那几类更需要明确判断，误判会把库弄乱，留给用户自己手动加。
-let lastExtractAt = Date.now() // 从启动时刻算起，避免一启动就把历史聊天全部拿去提炼
+// ── 自动记忆提炼：聊天/日记里值得记住的内容自动存入 Supabase memories 表 ──
+let lastExtractAt = Date.now()
 const EXTRACT_INTERVAL = 6 * 60 * 60 * 1000 // 6 小时
 
 async function extractAndSaveMemory(text, sourceLabel) {
@@ -104,19 +56,19 @@ async function extractAndSaveMemory(text, sourceLabel) {
       memoryCache
     )
     const clean = raw.trim().replace(/```json|```/g, '').trim()
-    const data = JSON.parse(clean)
-    if (!data.memorable || !data.title) return
-    await notion.pages.create({
-      parent: { data_source_id: MEMORY_SOURCES.moments.id },
-      properties: {
-        '标题': { title: [{ text: { content: data.title } }] },
-        '内容': { rich_text: [{ text: { content: data.content || '' } }] },
-        '日期': { date: { start: new Date().toISOString().split('T')[0] } }
-      }
+    const parsed = JSON.parse(clean)
+    if (!parsed.memorable || !parsed.title) return
+    const source = sourceLabel.includes('日记') ? 'diary' : sourceLabel.includes('留言') ? 'board' : 'chat'
+    const { error } = await supabase.from('memories').insert({
+      title: parsed.title,
+      content: parsed.content || '',
+      source
     })
-    console.log('自动记忆已存:', data.title)
+    if (error) throw error
+    await fetchMemory() // 立刻刷新缓存
+    console.log('自动记忆已存:', parsed.title)
   } catch (e) {
-    console.log('记忆提炼失败:', e.message)
+    if (!isMissingTable(e)) console.log('记忆提炼失败:', e.message)
   }
 }
 
@@ -126,7 +78,7 @@ async function extractFromRecentChat(sinceISO) {
     .eq('session_id', 'default')
     .gte('created_at', sinceISO)
     .order('created_at', { ascending: true })
-  if (!recent || recent.length < 4) return // 太少不值得提炼
+  if (!recent || recent.length < 4) return
   const transcript = recent.map(m => `${m.role === 'user' ? '小好' : '小克'}：${m.content}`).join('\n')
   await extractAndSaveMemory(transcript, '最近的聊天记录')
 }
@@ -224,7 +176,11 @@ function buildPrefsPrompt(prefs) {
   }
   const parts = []
   if (prefs.nickname && prefs.nickname !== '小好') parts.push(`她希望你叫她"${prefs.nickname}"。`)
-  if (prefs.style && STYLE_MAP[prefs.style]) parts.push(STYLE_MAP[prefs.style])
+  if (prefs.styleDesc && prefs.styleDesc.trim()) {
+    parts.push(`语气风格：${prefs.styleDesc.trim()}`)
+  } else if (prefs.style && STYLE_MAP[prefs.style]) {
+    parts.push(STYLE_MAP[prefs.style])
+  }
   if (prefs.styleCustom && prefs.styleCustom.trim()) parts.push(prefs.styleCustom.trim())
   if (prefs.extra && prefs.extra.trim()) parts.push(`她补充说：${prefs.extra.trim()}`)
   return parts.length ? '\n\n【偏好设置】\n' + parts.join('\n') : ''
@@ -704,7 +660,9 @@ app.get('/api/health', async (req, res) => {
     const { data, error } = await supabase
       .from('health_data').select('*').order('date', { ascending: false }).limit(7)
     if (error) throw error
-    res.json({ today: data?.[0] || null, recent: data || [] })
+    const today = todayStr()
+    const todayData = data?.find(d => d.date === today) || null
+    res.json({ today: todayData, recent: data || [] })
   } catch (e) {
     if (!isMissingTable(e)) console.log('HEALTH READ ERROR:', e.message)
     res.json({ today: null, recent: [], tableMissing: isMissingTable(e) })
