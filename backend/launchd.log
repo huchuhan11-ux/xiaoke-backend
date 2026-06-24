@@ -114,3 +114,10 @@ CLAUDE CHAT ERROR: API Error: 529 Overloaded. This is a server-side issue, usual
 ◇ injected env (7) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
 后端跑起来了 port 3001
 记忆读取成功（重要时刻18 事件7 梗12 留言7）
+USAGE WRITE ERROR: TypeError: fetch failed
+USAGE WRITE ERROR: TypeError: fetch failed
+USAGE WRITE ERROR: TypeError: fetch failed
+USAGE WRITE ERROR: TypeError: fetch failed
+USAGE WRITE ERROR: TypeError: fetch failed
+USAGE WRITE ERROR: TypeError: fetch failed
+USAGE WRITE ERROR: TypeError: fetch failed

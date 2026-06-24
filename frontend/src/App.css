@@ -1724,6 +1724,21 @@ button.diary-mood-btn {
   letter-spacing: 0.02em;
 }
 
+.prefs-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #c08b72;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding-bottom: 4px;
+  border-bottom: 0.5px solid rgba(192,139,114,0.2);
+}
+
+.dark .prefs-section-title {
+  color: #c9a227;
+  border-bottom-color: rgba(201,162,39,0.15);
+}
+
 .prefs-section {
   display: flex;
   flex-direction: column;

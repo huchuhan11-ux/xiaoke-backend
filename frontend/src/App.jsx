@@ -11,7 +11,7 @@ const NAV = [
   { id: 'letter', label: '信箱', icon: '✉️' },
   { id: 'board', label: '留言板', icon: '📌' },
   { id: 'monitor', label: '数据', icon: '📊' },
-  { id: 'prefs', label: '偏好', icon: '⚙️' },
+  { id: 'settings', label: '设置', icon: '⚙️' },
 ]
 
 const DEFAULT_PREFS = { nickname: '', style: 'default', styleCustom: '', extra: '' }
@@ -28,7 +28,7 @@ const STYLE_OPTIONS = [
   { value: 'clingy', label: '黏人', desc: '多撒娇，爱腻着你' },
 ]
 
-function Preferences() {
+function Settings() {
   const [prefs, setPrefs] = useState(loadPrefs)
   const [saved, setSaved] = useState(false)
 
@@ -42,7 +42,8 @@ function Preferences() {
 
   return (
     <div className="prefs-page">
-      <div className="prefs-title">偏好设置</div>
+      <div className="prefs-title">设置</div>
+      <div className="prefs-section-title">偏好</div>
 
       <div className="prefs-section">
         <div className="prefs-label">你叫我</div>
@@ -1105,7 +1106,7 @@ export default function App() {
         {view === 'letter' && <Letter />}
         {view === 'board' && <Board />}
         {view === 'monitor' && <Monitor />}
-        {view === 'prefs' && <Preferences />}
+        {view === 'settings' && <Settings />}
       </div>
 
       <div className="tabbar">
