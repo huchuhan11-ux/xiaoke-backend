@@ -161,7 +161,7 @@ html {
 }
 
 .inputarea {
-  padding: 10px 20px 28px;
+  padding: 12px 20px 32px;
   border-top: 0.5px solid rgba(192,139,114,0.18);
   flex-shrink: 0;
 }
@@ -3330,3 +3330,134 @@ button.diary-mood-btn {
 .dark .records-row-date { color: #7a6a4a; }
 .dark .records-row-preview { color: #c8b89a; }
 .dark .records-back-btn { color: #c9a227; }
+
+/* ── 附件预览 ── */
+.attach-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px 8px;
+}
+
+.attach-thumb {
+  width: 52px;
+  height: 52px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid rgba(192,139,114,0.2);
+}
+
+.attach-file-chip {
+  font-size: 12px;
+  color: #7a5c3c;
+  background: rgba(192,139,114,0.1);
+  border-radius: 8px;
+  padding: 4px 10px;
+}
+
+.attach-remove {
+  background: none;
+  border: none;
+  color: #c08b72;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 4px;
+  line-height: 1;
+}
+
+/* ── 附件发送按钮 ── */
+.inputwrap-attach {
+  background: none;
+  border: none;
+  color: rgba(138,109,78,0.55);
+  cursor: pointer;
+  padding: 0 6px 0 0;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.inputwrap-attach:hover { color: #c08b72; }
+
+/* ── 消息内图片/文件 ── */
+.msg-img {
+  display: block;
+  max-width: 200px;
+  max-height: 200px;
+  border-radius: 10px;
+  margin-bottom: 4px;
+}
+
+.msg-file-chip {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-bottom: 2px;
+}
+
+/* ── 记录首页两大卡片 ── */
+.records-home-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px 16px;
+  justify-content: center;
+}
+
+.records-home-card {
+  background: rgba(253,250,245,1);
+  border: 1px solid rgba(192,139,114,0.2);
+  border-radius: 18px;
+  padding: 28px 24px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s;
+}
+
+.records-home-card:active { background: rgba(192,139,114,0.08); }
+
+.records-home-icon { font-size: 28px; }
+
+.records-home-name {
+  font-size: 20px;
+  font-weight: 600;
+  color: #4a3728;
+  margin-top: 4px;
+}
+
+.records-home-sub {
+  font-size: 12px;
+  color: #a08060;
+}
+
+/* ── 记录板块导航栏 ── */
+.records-section-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.records-nav-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #4a3728;
+}
+
+/* ── settings 模型行 ── */
+.settings-row-model {
+  cursor: default;
+  align-items: center;
+  gap: 12px;
+}
+
+.dark .records-home-card { background: rgba(255,255,255,0.03); border-color: rgba(201,162,39,0.1); }
+.dark .records-home-name { color: #e8d5a3; }
+.dark .records-home-sub { color: #7a6a4a; }
+.dark .records-nav-title { color: #e8d5a3; }
+.dark .attach-file-chip { background: rgba(201,162,39,0.08); color: #c9a227; }
+.dark .inputwrap-attach { color: rgba(201,162,39,0.35); }
+.dark .inputwrap-attach:hover { color: #c9a227; }

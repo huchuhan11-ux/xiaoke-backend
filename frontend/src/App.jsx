@@ -77,7 +77,7 @@ function fmtTime(ts) {
   return d.toDateString() === now.toDateString() ? hm : `${d.getMonth()+1}/${d.getDate()} ${hm}`
 }
 
-function Settings({ dark, setDark }) {
+function Settings({ dark, setDark, chatModel, setChatModel }) {
   const [subview, setSubview] = useState(null)
   const [prefs, setPrefs] = useState(loadPrefs)
   const [styles, setStyles] = useState(loadStyles)
@@ -173,6 +173,17 @@ function Settings({ dark, setDark }) {
           <div className="settings-row" onClick={() => setDark(d => !d)}>
             <span className="settings-row-label">昼夜模式</span>
             <span className="settings-row-val">{dark ? '夜间 🌙' : '白天 ☀️'}</span>
+          </div>
+          <div className="settings-row settings-row-model">
+            <span className="settings-row-label">对话模型</span>
+            <div className="model-toggle-row" style={{ marginBottom: 0 }}>
+              {['sonnet', 'opus'].map(m => (
+                <button key={m} className={`model-pill ${chatModel === m ? 'active' : ''}`}
+                  onClick={() => { setChatModel(m); localStorage.setItem('chatModel', m) }}>
+                  {m === 'sonnet' ? 'Sonnet' : 'Opus'}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -419,6 +430,7 @@ function Records() {
   const [mood, setMood] = useState('')
   const [posting, setPosting] = useState(false)
   const [generating, setGenerating] = useState(false)
+  const [activeSection, setActiveSection] = useState(null) // null | 'diary' | 'letter'
   const [detailEntry, setDetailEntry] = useState(null)
 
   const load = async () => {
@@ -476,162 +488,107 @@ function Records() {
   const diaryEntries = entries.filter(e => e._type === 'diary')
   const letterEntries = entries.filter(e => e._type === 'letter')
 
+  const mailIcon = (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+      <polyline points="22,6 12,13 2,6"/>
+    </svg>
+  )
+
+  // Level 3: full detail
   if (detailEntry) {
     return (
       <div className="journal">
         <div className="records-detail-wrap">
           <button className="records-back-btn" onClick={() => setDetailEntry(null)}>← 返回</button>
-          <JournalCard
-            entry={detailEntry}
-            expanded={true}
-            onToggle={() => {}}
-            onReplySubmit={handleReplySubmit}
-          />
+          <JournalCard entry={detailEntry} expanded={true} onToggle={() => {}} onReplySubmit={handleReplySubmit} />
         </div>
       </div>
     )
   }
 
-  return (
-    <div className="journal">
-      <div className="journal-feed">
-        {/* 日记 板块 */}
-        <div className="records-section">
-          <div className="records-section-hd">日记</div>
-          <div className="records-section-feed">
-            {diaryEntries.length === 0 ? (
-              <div className="records-empty-sm">还没有日记</div>
+  // Level 2: compact list within a section
+  if (activeSection) {
+    const isLetter = activeSection === 'letter'
+    const list = isLetter ? letterEntries : diaryEntries
+    return (
+      <div className="journal">
+        <div className="records-detail-wrap">
+          <div className="records-section-nav">
+            <button className="records-back-btn" style={{ padding: '10px 0 0' }} onClick={() => setActiveSection(null)}>←</button>
+            <span className="records-nav-title">{isLetter ? '信' : '日记'}</span>
+            {isLetter && (
+              <button className="jbar-mail" style={{ marginLeft: 'auto' }} onClick={generateLetter} disabled={generating}>
+                {generating ? '…' : mailIcon}
+              </button>
+            )}
+          </div>
+          <div className="records-section-feed" style={{ marginTop: '4px' }}>
+            {list.length === 0 ? (
+              <div className="records-empty-sm">{isLetter ? '还没有信' : '还没有日记'}</div>
             ) : (
-              diaryEntries.map(e => (
+              list.map(e => (
                 <div key={ekey(e)} className="records-row" onClick={() => setDetailEntry(e)}>
                   <div className="records-row-top">
                     <span className="records-row-date">{fmtDate(e.created_at)}</span>
                     {e.mood && <span className="records-row-mood">{e.mood}</span>}
-                  </div>
-                  <div className="records-row-preview">{(e.content||'').slice(0,45)}{(e.content||'').length>45?'…':''}</div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* 信 板块 */}
-        <div className="records-section">
-          <div className="records-section-hd">
-            <span>信</span>
-            <button className="jbar-mail" onClick={generateLetter} disabled={generating} title="让克写封信">
-              {generating ? '…' : (
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-                  <polyline points="22,6 12,13 2,6"/>
-                </svg>
-              )}
-            </button>
-          </div>
-          <div className="records-section-feed">
-            {letterEntries.length === 0 ? (
-              <div className="records-empty-sm">还没有信</div>
-            ) : (
-              letterEntries.map(e => (
-                <div key={ekey(e)} className="records-row" onClick={() => setDetailEntry(e)}>
-                  <div className="records-row-top">
-                    <span className="records-row-date">{fmtDate(e.created_at)}</span>
                     {e.letter_comments?.length > 0 && <span className="records-row-cmts">💬 {e.letter_comments.length}</span>}
                   </div>
-                  <div className="records-row-preview">{(e.content||'').slice(0,45)}{(e.content||'').length>45?'…':''}</div>
+                  <div className="records-row-preview">{(e.content||'').slice(0,50)}{(e.content||'').length>50?'…':''}</div>
                 </div>
               ))
             )}
           </div>
         </div>
-      </div>
-
-      {/* 日记撰写条 */}
-      <div className={`jbar ${composing ? 'jbar-open' : ''}`}>
-        {composing ? (
-          <>
-            <div className="jbar-moods">
-              {MOODS.map(m => (
-                <button key={m} className={`jbar-mood-btn ${mood === m ? 'active' : ''}`}
-                  onClick={() => setMood(mood === m ? '' : m)}>{m}</button>
-              ))}
-            </div>
-            <textarea value={input} onChange={e => setInput(e.target.value)}
-              placeholder="今天……" rows={4} className="jbar-textarea" autoFocus />
-            <div className="jbar-btns">
-              <button onClick={() => { setComposing(false); setInput(''); setMood('') }} className="jbar-cancel">取消</button>
-              <button onClick={submitDiary} disabled={posting} className="jbar-submit">
-                {posting ? '记录中…' : '记下'}
-              </button>
-            </div>
-          </>
-        ) : (
-          <div className="jbar-closed">
-            <button className="jbar-ph" onClick={() => setComposing(true)}>今天……</button>
+        {!isLetter && (
+          <div className={`jbar ${composing ? 'jbar-open' : ''}`}>
+            {composing ? (
+              <>
+                <div className="jbar-moods">
+                  {MOODS.map(m => (
+                    <button key={m} className={`jbar-mood-btn ${mood === m ? 'active' : ''}`}
+                      onClick={() => setMood(mood === m ? '' : m)}>{m}</button>
+                  ))}
+                </div>
+                <textarea value={input} onChange={e => setInput(e.target.value)}
+                  placeholder="今天……" rows={4} className="jbar-textarea" autoFocus />
+                <div className="jbar-btns">
+                  <button onClick={() => { setComposing(false); setInput(''); setMood('') }} className="jbar-cancel">取消</button>
+                  <button onClick={submitDiary} disabled={posting} className="jbar-submit">
+                    {posting ? '记录中…' : '记下'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="jbar-closed">
+                <button className="jbar-ph" onClick={() => setComposing(true)}>今天……</button>
+              </div>
+            )}
           </div>
         )}
       </div>
-    </div>
-  )
-}
-
-function Crab() {
-  const [posX, setPosX] = useState(50)
-  const [flipX, setFlipX] = useState(false)
-  const [anim, setAnim] = useState('idle')
-  const timer = useRef(null)
-
-  const trigger = () => {
-    if (timer.current) clearTimeout(timer.current)
-    const r = Math.random()
-    if (r < 0.50) {
-      const newX = 12 + Math.random() * 76
-      setFlipX(newX < posX)
-      setPosX(newX)
-      setAnim('running')
-      timer.current = setTimeout(() => setAnim('idle'), 1300)
-    } else if (r < 0.75) {
-      setAnim('jumping')
-      timer.current = setTimeout(() => setAnim('idle'), 720)
-    } else {
-      setAnim('snapping')
-      timer.current = setTimeout(() => setAnim('idle'), 600)
-    }
+    )
   }
 
+  // Level 1: two section cards (home view)
   return (
-    <div className="hv2-crab-stage" onClick={trigger}>
-      <div
-        className="hv2-crab-outer"
-        style={{ left: `${posX}%`, transform: `translateX(-50%) scaleX(${flipX ? -1 : 1})` }}
-      >
-        <div className={`hv2-crab-inner hv2-crab-${anim}`}>
-          <svg viewBox="0 0 64 54" width="52" height="44">
-            <ellipse cx="32" cy="32" rx="16" ry="12" fill="#e87b4c"/>
-            <ellipse cx="32" cy="30" rx="10" ry="7" fill="#f59261" opacity="0.55"/>
-            <line x1="24" y1="23" x2="21" y2="16" stroke="#e87b4c" strokeWidth="2.5" strokeLinecap="round"/>
-            <line x1="40" y1="23" x2="43" y2="16" stroke="#e87b4c" strokeWidth="2.5" strokeLinecap="round"/>
-            <circle cx="21" cy="14" r="4" fill="#fff"/>
-            <circle cx="43" cy="14" r="4" fill="#fff"/>
-            <circle cx="22" cy="15" r="2.3" fill="#1a1412"/>
-            <circle cx="44" cy="15" r="2.3" fill="#1a1412"/>
-            <circle cx="22.8" cy="14.2" r="0.8" fill="#fff"/>
-            <circle cx="44.8" cy="14.2" r="0.8" fill="#fff"/>
-            <path d="M16 28 C5 23 2 32 8 38 C12 42 18 37 16 32" fill="#e87b4c"/>
-            <path d="M11 38 C9 40 7 38" fill="none" stroke="#c95e30" strokeWidth="1.5" strokeLinecap="round"/>
-            <path d="M48 28 C59 23 62 32 56 38 C52 42 46 37 48 32" fill="#e87b4c"/>
-            <path d="M53 38 C55 40 57 38" fill="none" stroke="#c95e30" strokeWidth="1.5" strokeLinecap="round"/>
-            <line x1="22" y1="41" x2="14" y2="52" stroke="#e87b4c" strokeWidth="2.5" strokeLinecap="round"/>
-            <line x1="26" y1="43" x2="20" y2="54" stroke="#e87b4c" strokeWidth="2.5" strokeLinecap="round"/>
-            <line x1="38" y1="43" x2="44" y2="54" stroke="#e87b4c" strokeWidth="2.5" strokeLinecap="round"/>
-            <line x1="42" y1="41" x2="50" y2="52" stroke="#e87b4c" strokeWidth="2.5" strokeLinecap="round"/>
-            <path d="M27 36 Q32 39 37 36" fill="none" stroke="#c95e30" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
+    <div className="journal">
+      <div className="records-home-wrap">
+        <div className="records-home-card" onClick={() => setActiveSection('diary')}>
+          <div className="records-home-icon">📔</div>
+          <div className="records-home-name">日记</div>
+          <div className="records-home-sub">{diaryEntries.length > 0 ? `${diaryEntries.length} 篇` : '还没有记录'}</div>
+        </div>
+        <div className="records-home-card" onClick={() => setActiveSection('letter')}>
+          <div className="records-home-icon">✉</div>
+          <div className="records-home-name">信</div>
+          <div className="records-home-sub">{letterEntries.length > 0 ? `${letterEntries.length} 封` : '还没有信'}</div>
         </div>
       </div>
     </div>
   )
 }
+
 
 function Home({ dark, setDark }) {
   const [time, setTime] = useState(new Date())
@@ -888,9 +845,6 @@ function Home({ dark, setDark }) {
         </div>
       </div>
 
-      {/* 小螃蟹 */}
-      <Crab />
-
       {/* 戳一戳 */}
       <div className="hv2-poke">
         <button className="home-poke-btn" onClick={poke}>
@@ -1029,7 +983,7 @@ export default function App() {
   const [bgImage, setBgImage] = useState(() => localStorage.getItem('chatBg') || '')
   const [openTraces, setOpenTraces] = useState(() => new Set())
   const [editingId, setEditingId] = useState(null)
-  const [chatModel, setChatModel] = useState('sonnet')
+  const [chatModel, setChatModel] = useState(() => localStorage.getItem('chatModel') || 'sonnet')
   const [playingId, setPlayingId] = useState(null)
   const audioRef = useRef(null)
 
@@ -1054,6 +1008,8 @@ export default function App() {
   }
   const bottomRef = useRef(null)
   const bgInputRef = useRef(null)
+  const fileInputRef = useRef(null)
+  const [attachment, setAttachment] = useState(null)
 
   const loadSessions = () => {
     fetch(`${API}/api/sessions`)
@@ -1173,6 +1129,22 @@ export default function App() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  const handleFileAttach = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      setAttachment({
+        name: file.name,
+        mime: file.type,
+        isImage: file.type.startsWith('image/'),
+        data: ev.target.result
+      })
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }
+
   const handleBgUpload = (e) => {
     const file = e.target.files[0]
     if (!file) return
@@ -1207,7 +1179,7 @@ export default function App() {
   }
 
   const send = async () => {
-    if (!input.trim() || loading) return
+    if ((!input.trim() && !attachment) || loading) return
     let base = messages
     if (editingId) {
       const idx = base.findIndex(m => m.id === editingId)
@@ -1216,9 +1188,11 @@ export default function App() {
       setEditingId(null)
     }
     const now = Date.now()
-    const userMsg = { id: now, role: 'user', content: input, ts: now }
+    const att = attachment
+    const userMsg = { id: now, role: 'user', content: input || (att ? `[${att.isImage ? '图片' : '文件'}: ${att.name}]` : ''), attachment: att || undefined, ts: now }
     setMessages([...base, userMsg])
     setInput('')
+    setAttachment(null)
     setLoading(true)
     const history = [...base, userMsg]
       .filter(m => m.role === 'user' || m.role === 'assistant')
@@ -1234,7 +1208,7 @@ export default function App() {
       const res = await fetch(`${API}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: history, session_id: sessionId, preferences: prefsWithDesc, model: chatModel })
+        body: JSON.stringify({ messages: history, session_id: sessionId, preferences: prefsWithDesc, model: chatModel, attachment: att ? { name: att.name, mime: att.mime, isImage: att.isImage, data: att.data } : null })
       })
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
@@ -1260,13 +1234,6 @@ export default function App() {
             } catch {}
           }
         }
-      }
-      // split multi-message reply on [MSG] separator
-      const parts = aiMsg.content.split('[MSG]').map(p => p.trim()).filter(Boolean)
-      if (parts.length > 1) {
-        const now = Date.now()
-        const multiMsgs = parts.map((p, i) => ({ id: now + i, role: 'assistant', content: p, trace: i === 0 ? aiMsg.trace : undefined }))
-        setMessages(prev => [...prev.filter(m => m.id !== aiMsg.id), ...multiMsgs])
       }
     } catch {
       setMessages(prev => [...prev, { id: Date.now(), role: 'assistant', content: '出错了，待会儿再试。' }])
@@ -1340,7 +1307,11 @@ export default function App() {
                     </div>
                   )}
                   <div className={`msg ${m.role}`}>
-                    <div className={`bubble ${bgImage ? 'bubble-bg' : ''}`}>{m.content}</div>
+                    <div className={`bubble ${bgImage ? 'bubble-bg' : ''}`}>
+                      {m.attachment?.isImage && <img className="msg-img" src={m.attachment.data} alt={m.attachment.name} />}
+                      {m.attachment && !m.attachment.isImage && <div className="msg-file-chip">📎 {m.attachment.name}</div>}
+                      {m.content && !m.content.startsWith('[图片:') && !m.content.startsWith('[文件:') ? m.content : (!m.attachment ? m.content : null)}
+                    </div>
                   </div>
                   {m.id !== 1 && (
                     <div className={`msg-meta ${m.role}`}>
@@ -1385,21 +1356,28 @@ export default function App() {
               <div ref={bottomRef} />
             </div>
             <div className="inputarea" style={bgImage ? { background: 'rgba(15,8,4,0.35)', backdropFilter: 'blur(24px)', borderTopColor: 'rgba(255,255,255,0.1)' } : {}}>
-              <div className="model-toggle-row">
-                {['sonnet', 'opus'].map(m => (
-                  <button key={m} className={`model-pill ${chatModel === m ? 'active' : ''}`}
-                    onClick={() => setChatModel(m)}>
-                    {m === 'sonnet' ? 'Sonnet' : 'Opus'}
-                  </button>
-                ))}
-              </div>
               {editingId && (
                 <div className="editing-banner">
                   <span>正在编辑这条消息，发送后会替换原内容</span>
                   <button onClick={cancelEdit}>取消</button>
                 </div>
               )}
+              {attachment && (
+                <div className="attach-preview">
+                  {attachment.isImage
+                    ? <img className="attach-thumb" src={attachment.data} alt={attachment.name} />
+                    : <span className="attach-file-chip">📎 {attachment.name}</span>
+                  }
+                  <button className="attach-remove" onClick={() => setAttachment(null)}>×</button>
+                </div>
+              )}
               <div className="inputwrap">
+                <button className="inputwrap-attach" onClick={() => fileInputRef.current?.click()} title="附件">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                  </svg>
+                </button>
+                <input ref={fileInputRef} type="file" accept="image/*,application/pdf,.txt,.doc,.docx" style={{ display: 'none' }} onChange={handleFileAttach} />
                 <textarea value={input} onChange={e => setInput(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }}}
                   placeholder="说点什么……" rows={1} />
@@ -1414,7 +1392,7 @@ export default function App() {
         )}
         {view === 'records' && <Records />}
         {view === 'monitor' && <Monitor dark={dark} />}
-        {view === 'settings' && <Settings dark={dark} setDark={setDark} />}
+        {view === 'settings' && <Settings dark={dark} setDark={setDark} chatModel={chatModel} setChatModel={setChatModel} />}
       </div>
 
       <div className="tabbar">

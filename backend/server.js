@@ -3,6 +3,7 @@ const express = require('express')
 const cors = require('cors')
 const path = require('path')
 const { spawn, execFile } = require('child_process')
+const fs = require('fs')
 const { createClient } = require('@supabase/supabase-js')
 const app = express()
 app.use(cors())
@@ -116,7 +117,7 @@ const TRACE_INSTRUCTION = `
 
 在正式回复之前，先输出一段"过程记录"，格式：<trace>条目1|条目2</trace>，2到4条，每条不超过18字，第一人称口语，像脑子里飘过的念头（例如"周六中午12:28，居然才刚醒"），不是日志体；如果这条回复其实不用查什么，写1条很简短的就行，别硬凑。写完 </trace> 换行，紧接着写正式回复正文，正文里不要重复过程记录已经说过的内容。
 
-如果你想连发多条短消息，可以在消息之间插入 [MSG] 作为分隔符，最多分3条，每条独立完整。也可以只发一条，随你感觉。`
+`
 
 function extractTrace(fullText) {
   const m = fullText.match(/<trace>([\s\S]*?)<\/trace>\s*\n?/)
@@ -346,7 +347,7 @@ app.post('/api/chat', async (req, res) => {
     lastExtractAt = Date.now()
     extractFromRecentChat(since).catch(e => console.log('聊天记忆提炼失败', e.message))
   }
-  const { messages, session_id = 'default', preferences, model } = req.body
+  const { messages, session_id = 'default', preferences, model, attachment } = req.body
   const lastMsg = messages[messages.length - 1]
   const { error: insertErr } = await supabase.from('messages').insert({
     session_id, role: lastMsg.role, content: lastMsg.content
@@ -355,8 +356,18 @@ app.post('/api/chat', async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
+  let tmpFilePath = null
   try {
-    const transcript = messages.map(m => `${m.role === 'user' ? '小好' : '小克'}：${m.content}`).join('\n\n')
+    // write attachment to temp file so Claude CLI can read it
+    let attachNote = ''
+    if (attachment?.data) {
+      const ext = attachment.mime?.split('/')[1]?.split(';')[0] || 'bin'
+      tmpFilePath = `/tmp/xk-attach-${Date.now()}.${ext}`
+      const b64 = attachment.data.replace(/^data:[^;]+;base64,/, '')
+      fs.writeFileSync(tmpFilePath, Buffer.from(b64, 'base64'))
+      attachNote = attachment.isImage ? `\n\n@${tmpFilePath}` : `\n\n[文件附件: ${attachment.name}]`
+    }
+    const transcript = messages.map(m => `${m.role === 'user' ? '小好' : '小克'}：${m.content}`).join('\n\n') + attachNote
     const context = await buildRealContext()
     const splitter = makeTraceSplitter(
       text => res.write(`data: ${JSON.stringify({ text })}\n\n`),
@@ -373,6 +384,8 @@ app.post('/api/chat', async (req, res) => {
     res.write(`data: ${JSON.stringify({ text: '出错了，待会儿再试。' })}\n\n`)
     res.write('data: [DONE]\n\n')
     res.end()
+  } finally {
+    if (tmpFilePath) try { fs.unlinkSync(tmpFilePath) } catch {}
   }
 })
 
