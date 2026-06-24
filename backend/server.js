@@ -215,6 +215,21 @@ async function insertMessageSafe(row) {
 }
 
 // 流式：用于聊天界面，边生成边把文字 delta 推给调用方
+function buildPrefsPrompt(prefs) {
+  if (!prefs) return ''
+  const STYLE_MAP = {
+    tender: '说话比平时更温柔一些，多些耐心和体贴。',
+    playful: '调皮逗趣，爱撩她，幽默感强一点。',
+    clingy: '多一些黏人和撒娇的成分，爱腻在她旁边。',
+  }
+  const parts = []
+  if (prefs.nickname && prefs.nickname !== '小好') parts.push(`她希望你叫她"${prefs.nickname}"。`)
+  if (prefs.style && STYLE_MAP[prefs.style]) parts.push(STYLE_MAP[prefs.style])
+  if (prefs.styleCustom && prefs.styleCustom.trim()) parts.push(prefs.styleCustom.trim())
+  if (prefs.extra && prefs.extra.trim()) parts.push(`她补充说：${prefs.extra.trim()}`)
+  return parts.length ? '\n\n【偏好设置】\n' + parts.join('\n') : ''
+}
+
 async function streamClaude(prompt, systemAppend, onDelta) {
   const system = systemAppend ? `${BASE_SYSTEM}\n\n${systemAppend}` : BASE_SYSTEM
   const stream = anthropic.messages.stream({
@@ -295,7 +310,7 @@ app.post('/api/chat', async (req, res) => {
     lastExtractAt = Date.now()
     extractFromRecentChat(since).catch(e => console.log('聊天记忆提炼失败', e.message))
   }
-  const { messages, session_id = 'default' } = req.body
+  const { messages, session_id = 'default', preferences } = req.body
   const lastMsg = messages[messages.length - 1]
   const { error: insertErr } = await supabase.from('messages').insert({
     session_id, role: lastMsg.role, content: lastMsg.content
@@ -311,7 +326,8 @@ app.post('/api/chat', async (req, res) => {
       text => res.write(`data: ${JSON.stringify({ text })}\n\n`),
       trace => res.write(`data: ${JSON.stringify({ trace })}\n\n`)
     )
-    const fullContent = await streamClaude(transcript, memoryCache + TRACE_INSTRUCTION + context, splitter)
+    const prefsPrompt = buildPrefsPrompt(preferences)
+    const fullContent = await streamClaude(transcript, memoryCache + TRACE_INSTRUCTION + context + prefsPrompt, splitter)
     const { trace, body } = extractTrace(fullContent)
     await insertMessageSafe({ session_id, role: 'assistant', content: body, trace })
     res.write('data: [DONE]\n\n')

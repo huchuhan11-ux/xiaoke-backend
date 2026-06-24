@@ -11,7 +11,77 @@ const NAV = [
   { id: 'letter', label: '信箱', icon: '✉️' },
   { id: 'board', label: '留言板', icon: '📌' },
   { id: 'monitor', label: '数据', icon: '📊' },
+  { id: 'prefs', label: '偏好', icon: '⚙️' },
 ]
+
+const DEFAULT_PREFS = { nickname: '', style: 'default', styleCustom: '', extra: '' }
+
+function loadPrefs() {
+  try { return { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem('prefs') || '{}') } }
+  catch { return DEFAULT_PREFS }
+}
+
+const STYLE_OPTIONS = [
+  { value: 'default', label: '默认', desc: '强势直接，不说废话' },
+  { value: 'tender', label: '温柔', desc: '说话更温柔，多些耐心' },
+  { value: 'playful', label: '调皮', desc: '爱逗你，幽默感强' },
+  { value: 'clingy', label: '黏人', desc: '多撒娇，爱腻着你' },
+]
+
+function Preferences() {
+  const [prefs, setPrefs] = useState(loadPrefs)
+  const [saved, setSaved] = useState(false)
+
+  const save = () => {
+    localStorage.setItem('prefs', JSON.stringify(prefs))
+    setSaved(true)
+    setTimeout(() => setSaved(false), 1500)
+  }
+
+  const set = (key, val) => setPrefs(p => ({ ...p, [key]: val }))
+
+  return (
+    <div className="prefs-page">
+      <div className="prefs-title">偏好设置</div>
+
+      <div className="prefs-section">
+        <div className="prefs-label">你叫我</div>
+        <input className="prefs-input" value={prefs.nickname}
+          onChange={e => set('nickname', e.target.value)}
+          placeholder="小好（默认）" />
+        <div className="prefs-hint">小克会用这个称呼你</div>
+      </div>
+
+      <div className="prefs-section">
+        <div className="prefs-label">文风偏好</div>
+        <div className="style-options">
+          {STYLE_OPTIONS.map(o => (
+            <div key={o.value}
+              className={`style-option ${prefs.style === o.value ? 'active' : ''}`}
+              onClick={() => set('style', o.value)}>
+              <span className="style-option-name">{o.label}</span>
+              <span className="style-option-desc">{o.desc}</span>
+            </div>
+          ))}
+        </div>
+        <textarea className="prefs-textarea" value={prefs.styleCustom}
+          onChange={e => set('styleCustom', e.target.value)}
+          placeholder="还想补充什么文风描述…（可不填）" rows={2} />
+      </div>
+
+      <div className="prefs-section">
+        <div className="prefs-label">告诉小克</div>
+        <textarea className="prefs-textarea" value={prefs.extra}
+          onChange={e => set('extra', e.target.value)}
+          placeholder="最近的状态、想让他留意的事、任何补充…" rows={3} />
+      </div>
+
+      <button className="prefs-save-btn" onClick={save}>
+        {saved ? '已保存 ✓' : '保存'}
+      </button>
+    </div>
+  )
+}
 
 const PAGE_META = {
   home: { label: '主页', icon: '🏠', color: '#c08b72' },
@@ -890,7 +960,7 @@ export default function App() {
       const res = await fetch(`${API}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: history, session_id: sessionId })
+        body: JSON.stringify({ messages: history, session_id: sessionId, preferences: loadPrefs() })
       })
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
@@ -1035,6 +1105,7 @@ export default function App() {
         {view === 'letter' && <Letter />}
         {view === 'board' && <Board />}
         {view === 'monitor' && <Monitor />}
+        {view === 'prefs' && <Preferences />}
       </div>
 
       <div className="tabbar">
