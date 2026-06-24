@@ -414,12 +414,12 @@ function JournalCard({ entry, expanded, onToggle, onReplySubmit }) {
 
 function Records() {
   const [entries, setEntries] = useState([])
-  const [expanded, setExpanded] = useState(new Set())
   const [composing, setComposing] = useState(false)
   const [input, setInput] = useState('')
   const [mood, setMood] = useState('')
   const [posting, setPosting] = useState(false)
   const [generating, setGenerating] = useState(false)
+  const [detailEntry, setDetailEntry] = useState(null)
 
   const load = async () => {
     const [diary, letters] = await Promise.all([
@@ -436,9 +436,11 @@ function Records() {
   useEffect(() => { load() }, [])
 
   const ekey = e => `${e._type}-${e.id}`
-  const toggleExpanded = k => setExpanded(prev => {
-    const next = new Set(prev); next.has(k) ? next.delete(k) : next.add(k); return next
-  })
+
+  const fmtDate = (s) => {
+    const d = new Date(s)
+    return `${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+  }
 
   const submitDiary = async () => {
     if (!input.trim() || posting) return
@@ -466,10 +468,29 @@ function Records() {
     setEntries(prev => prev.map(e =>
       e._type === 'letter' && e.id === letterId ? { ...e, letter_comments: comments } : e
     ))
+    if (detailEntry && detailEntry.id === letterId) {
+      setDetailEntry(prev => ({ ...prev, letter_comments: comments }))
+    }
   }
 
   const diaryEntries = entries.filter(e => e._type === 'diary')
   const letterEntries = entries.filter(e => e._type === 'letter')
+
+  if (detailEntry) {
+    return (
+      <div className="journal">
+        <div className="records-detail-wrap">
+          <button className="records-back-btn" onClick={() => setDetailEntry(null)}>← 返回</button>
+          <JournalCard
+            entry={detailEntry}
+            expanded={true}
+            onToggle={() => {}}
+            onReplySubmit={handleReplySubmit}
+          />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="journal">
@@ -482,11 +503,13 @@ function Records() {
               <div className="records-empty-sm">还没有日记</div>
             ) : (
               diaryEntries.map(e => (
-                <JournalCard key={ekey(e)} entry={e}
-                  expanded={expanded.has(ekey(e))}
-                  onToggle={() => toggleExpanded(ekey(e))}
-                  onReplySubmit={handleReplySubmit}
-                />
+                <div key={ekey(e)} className="records-row" onClick={() => setDetailEntry(e)}>
+                  <div className="records-row-top">
+                    <span className="records-row-date">{fmtDate(e.created_at)}</span>
+                    {e.mood && <span className="records-row-mood">{e.mood}</span>}
+                  </div>
+                  <div className="records-row-preview">{(e.content||'').slice(0,45)}{(e.content||'').length>45?'…':''}</div>
+                </div>
               ))
             )}
           </div>
@@ -510,11 +533,13 @@ function Records() {
               <div className="records-empty-sm">还没有信</div>
             ) : (
               letterEntries.map(e => (
-                <JournalCard key={ekey(e)} entry={e}
-                  expanded={expanded.has(ekey(e))}
-                  onToggle={() => toggleExpanded(ekey(e))}
-                  onReplySubmit={handleReplySubmit}
-                />
+                <div key={ekey(e)} className="records-row" onClick={() => setDetailEntry(e)}>
+                  <div className="records-row-top">
+                    <span className="records-row-date">{fmtDate(e.created_at)}</span>
+                    {e.letter_comments?.length > 0 && <span className="records-row-cmts">💬 {e.letter_comments.length}</span>}
+                  </div>
+                  <div className="records-row-preview">{(e.content||'').slice(0,45)}{(e.content||'').length>45?'…':''}</div>
+                </div>
               ))
             )}
           </div>
@@ -550,10 +575,67 @@ function Records() {
   )
 }
 
+function Crab() {
+  const [posX, setPosX] = useState(50)
+  const [flipX, setFlipX] = useState(false)
+  const [anim, setAnim] = useState('idle')
+  const timer = useRef(null)
+
+  const trigger = () => {
+    if (timer.current) clearTimeout(timer.current)
+    const r = Math.random()
+    if (r < 0.50) {
+      const newX = 12 + Math.random() * 76
+      setFlipX(newX < posX)
+      setPosX(newX)
+      setAnim('running')
+      timer.current = setTimeout(() => setAnim('idle'), 1300)
+    } else if (r < 0.75) {
+      setAnim('jumping')
+      timer.current = setTimeout(() => setAnim('idle'), 720)
+    } else {
+      setAnim('snapping')
+      timer.current = setTimeout(() => setAnim('idle'), 600)
+    }
+  }
+
+  return (
+    <div className="hv2-crab-stage" onClick={trigger}>
+      <div
+        className="hv2-crab-outer"
+        style={{ left: `${posX}%`, transform: `translateX(-50%) scaleX(${flipX ? -1 : 1})` }}
+      >
+        <div className={`hv2-crab-inner hv2-crab-${anim}`}>
+          <svg viewBox="0 0 64 54" width="52" height="44">
+            <ellipse cx="32" cy="32" rx="16" ry="12" fill="#e87b4c"/>
+            <ellipse cx="32" cy="30" rx="10" ry="7" fill="#f59261" opacity="0.55"/>
+            <line x1="24" y1="23" x2="21" y2="16" stroke="#e87b4c" strokeWidth="2.5" strokeLinecap="round"/>
+            <line x1="40" y1="23" x2="43" y2="16" stroke="#e87b4c" strokeWidth="2.5" strokeLinecap="round"/>
+            <circle cx="21" cy="14" r="4" fill="#fff"/>
+            <circle cx="43" cy="14" r="4" fill="#fff"/>
+            <circle cx="22" cy="15" r="2.3" fill="#1a1412"/>
+            <circle cx="44" cy="15" r="2.3" fill="#1a1412"/>
+            <circle cx="22.8" cy="14.2" r="0.8" fill="#fff"/>
+            <circle cx="44.8" cy="14.2" r="0.8" fill="#fff"/>
+            <path d="M16 28 C5 23 2 32 8 38 C12 42 18 37 16 32" fill="#e87b4c"/>
+            <path d="M11 38 C9 40 7 38" fill="none" stroke="#c95e30" strokeWidth="1.5" strokeLinecap="round"/>
+            <path d="M48 28 C59 23 62 32 56 38 C52 42 46 37 48 32" fill="#e87b4c"/>
+            <path d="M53 38 C55 40 57 38" fill="none" stroke="#c95e30" strokeWidth="1.5" strokeLinecap="round"/>
+            <line x1="22" y1="41" x2="14" y2="52" stroke="#e87b4c" strokeWidth="2.5" strokeLinecap="round"/>
+            <line x1="26" y1="43" x2="20" y2="54" stroke="#e87b4c" strokeWidth="2.5" strokeLinecap="round"/>
+            <line x1="38" y1="43" x2="44" y2="54" stroke="#e87b4c" strokeWidth="2.5" strokeLinecap="round"/>
+            <line x1="42" y1="41" x2="50" y2="52" stroke="#e87b4c" strokeWidth="2.5" strokeLinecap="round"/>
+            <path d="M27 36 Q32 39 37 36" fill="none" stroke="#c95e30" strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Home({ dark, setDark }) {
   const [time, setTime] = useState(new Date())
   const [greeting, setGreeting] = useState('')
-  const [msgCount, setMsgCount] = useState(null)
   const [weather, setWeather] = useState([])
   const [items, setItems] = useState([])
   const [adding, setAdding] = useState(false)
@@ -567,6 +649,10 @@ function Home({ dark, setDark }) {
   const [wishes, setWishes] = useState([])
   const [wishInput, setWishInput] = useState('')
   const [addingWish, setAddingWish] = useState(false)
+  const [health, setHealth] = useState(null)
+  const [healthMissing, setHealthMissing] = useState(false)
+  const [healthForm, setHealthForm] = useState(false)
+  const [hf, setHf] = useState({ sleep_hours: '', resting_heart_rate: '', steps: '', cycle_day: '' })
 
   function daysUntil(dateStr) {
     const target = new Date(dateStr)
@@ -582,11 +668,27 @@ function Home({ dark, setDark }) {
 
   useEffect(() => {
     fetch(`${API}/api/wakeup?_=${Date.now()}`).then(r => r.json()).then(d => setGreeting(d.text || '')).catch(() => {})
-    fetch(`${API}/api/stats/summary`).then(r => r.json()).then(d => setMsgCount(d.count ?? null)).catch(() => {})
+    fetch(`${API}/api/health`).then(r => r.json()).then(d => { setHealth(d.today || null); setHealthMissing(!!d.tableMissing) }).catch(() => {})
     fetch(`${API}/api/countdowns`).then(r => r.json()).then(d => { if (Array.isArray(d)) setItems(d) }).catch(() => {})
     fetch(`${API}/api/wishes`).then(r => r.json()).then(d => { if (Array.isArray(d)) setWishes(d) }).catch(() => {})
     fetch(`${API}/api/weather`).then(r => r.json()).then(d => { if (Array.isArray(d)) setWeather(d) }).catch(() => {})
   }, [])
+
+  const submitHealth = async () => {
+    const body = {}
+    if (hf.sleep_hours !== '') body.sleep_hours = parseFloat(hf.sleep_hours)
+    if (hf.resting_heart_rate !== '') body.resting_heart_rate = parseInt(hf.resting_heart_rate)
+    if (hf.steps !== '') body.steps = parseInt(hf.steps)
+    if (hf.cycle_day !== '') body.cycle_day = parseInt(hf.cycle_day)
+    try {
+      await fetch(`${API}/api/health`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      })
+      setHealthForm(false)
+      setHf({ sleep_hours: '', resting_heart_rate: '', steps: '', cycle_day: '' })
+      fetch(`${API}/api/health`).then(r => r.json()).then(d => { setHealth(d.today || null) }).catch(() => {})
+    } catch {}
+  }
 
   const poke = async () => {
     try {
@@ -702,9 +804,42 @@ function Home({ dark, setDark }) {
           <div className="hv2-bc-unit">天</div>
         </div>
         <div className="hv2-bc">
-          <div className="hv2-bc-lbl">对话</div>
-          <div className="hv2-bc-num">{msgCount ?? '—'}</div>
-          <div className="hv2-bc-unit">条</div>
+          <div className="hv2-bc-cd-header">
+            <span className="hv2-bc-lbl">健康</span>
+            {!healthMissing && (healthForm
+              ? <button className="hv2-cd-add-btn" onClick={() => setHealthForm(false)}>×</button>
+              : <button className="hv2-cd-add-btn" style={{ fontSize:'13px' }} onClick={() => {
+                  if (health) setHf({ sleep_hours: health.sleep_hours??'', resting_heart_rate: health.resting_heart_rate??'', steps: health.steps??'', cycle_day: health.cycle_day??'' })
+                  setHealthForm(true)
+                }}>{health ? '✎' : '+'}</button>
+            )}
+          </div>
+          {healthForm ? (
+            <div className="hv2-hf-form">
+              {[
+                { key: 'sleep_hours', label: '睡', placeholder: '时', type: 'number', step: '0.5' },
+                { key: 'resting_heart_rate', label: '心', placeholder: 'bpm', type: 'number' },
+                { key: 'steps', label: '步', placeholder: '步', type: 'number' },
+                { key: 'cycle_day', label: '周', placeholder: '天', type: 'number' },
+              ].map(({ key, label, placeholder, type, step }) => (
+                <div key={key} className="hv2-hf-row">
+                  <label className="hv2-hf-label">{label}</label>
+                  <input className="hv2-cd-input" type={type} step={step} placeholder={placeholder}
+                    value={hf[key]} onChange={e => setHf(p => ({ ...p, [key]: e.target.value }))} />
+                </div>
+              ))}
+              <button className="hv2-cd-confirm" style={{ width:'100%', marginTop:'4px' }} onClick={submitHealth}>保存</button>
+            </div>
+          ) : health ? (
+            <div className="hv2-health-grid">
+              <div className="hv2-health-item"><div className="hv2-health-lbl">睡眠</div><div className="hv2-health-val">{health.sleep_hours ? `${health.sleep_hours}h` : '—'}</div></div>
+              <div className="hv2-health-item"><div className="hv2-health-lbl">心率</div><div className="hv2-health-val">{health.resting_heart_rate ?? '—'}</div></div>
+              <div className="hv2-health-item"><div className="hv2-health-lbl">步数</div><div className="hv2-health-val">{health.steps ? (health.steps >= 1000 ? `${(health.steps/1000).toFixed(1)}k` : health.steps) : '—'}</div></div>
+              <div className="hv2-health-item"><div className="hv2-health-lbl">周期</div><div className="hv2-health-val">{health.cycle_day != null ? `D${health.cycle_day}` : '—'}</div></div>
+            </div>
+          ) : (
+            <div className="hv2-health-empty">{healthMissing ? '表未建' : '今天还没录入'}</div>
+          )}
         </div>
 
         {/* 左下：双城横排 */}
@@ -752,6 +887,9 @@ function Home({ dark, setDark }) {
           )}
         </div>
       </div>
+
+      {/* 小螃蟹 */}
+      <Crab />
 
       {/* 戳一戳 */}
       <div className="hv2-poke">
@@ -816,21 +954,14 @@ function fmtDuration(s) {
 
 function Monitor({ dark }) {
   const [usage, setUsage] = useState({})
-  const [health, setHealth] = useState(null)
-  const [healthMissing, setHealthMissing] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [healthForm, setHealthForm] = useState(false)
-  const [hf, setHf] = useState({ sleep_hours: '', resting_heart_rate: '', steps: '', cycle_day: '' })
 
-  const fetchData = () => Promise.all([
-    fetch(`${API}/api/usage`).then(r => r.json()).catch(() => ({ pages: {} })),
-    fetch(`${API}/api/health`).then(r => r.json()).catch(() => ({ today: null, recent: [] })),
-  ]).then(([u, h]) => {
-    setUsage(u.pages || {})
-    setHealth(h.today || null)
-    setHealthMissing(!!h.tableMissing)
-    setLoading(false)
-  })
+  const fetchData = () =>
+    fetch(`${API}/api/usage`).then(r => r.json()).catch(() => ({ pages: {} }))
+    .then(u => {
+      setUsage(u.pages || {})
+      setLoading(false)
+    })
 
   useEffect(() => {
     fetchData()
@@ -839,24 +970,6 @@ function Monitor({ dark }) {
     document.addEventListener('visibilitychange', onVisible)
     return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVisible) }
   }, [])
-
-  const submitHealth = async () => {
-    const body = {}
-    if (hf.sleep_hours !== '') body.sleep_hours = parseFloat(hf.sleep_hours)
-    if (hf.resting_heart_rate !== '') body.resting_heart_rate = parseInt(hf.resting_heart_rate)
-    if (hf.steps !== '') body.steps = parseInt(hf.steps)
-    if (hf.cycle_day !== '') body.cycle_day = parseInt(hf.cycle_day)
-    try {
-      await fetch(`${API}/api/health`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      })
-      setHealthForm(false)
-      setHf({ sleep_hours: '', resting_heart_rate: '', steps: '', cycle_day: '' })
-      fetchData()
-    } catch {}
-  }
 
   const pageKeys = Object.keys(PAGE_META)
   const totalSeconds = pageKeys.reduce((sum, k) => sum + (usage[k] || 0), 0)
@@ -893,70 +1006,9 @@ function Monitor({ dark }) {
         )}
       </div>
 
-      <div className="monitor-row">
-        <div className="monitor-card monitor-card-cal">
-          <div className="monitor-card-title">聊天日历</div>
-          <Heatmap dark={dark} />
-        </div>
-        <div className="monitor-card">
-          <div className="monitor-card-title" style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-            <span>健康</span>
-            {!healthMissing && !healthForm && (
-              <button className="health-edit-btn" onClick={() => {
-                if (health) setHf({
-                  sleep_hours: health.sleep_hours ?? '',
-                  resting_heart_rate: health.resting_heart_rate ?? '',
-                  steps: health.steps ?? '',
-                  cycle_day: health.cycle_day ?? '',
-                })
-                setHealthForm(true)
-              }}>{health ? '更新' : '录入'}</button>
-            )}
-          </div>
-          {healthForm ? (
-            <div className="health-form">
-              {[
-                { key: 'sleep_hours', label: '睡眠', placeholder: '小时', type: 'number', step: '0.5' },
-                { key: 'resting_heart_rate', label: '心率', placeholder: 'bpm', type: 'number' },
-                { key: 'steps', label: '步数', placeholder: '步', type: 'number' },
-                { key: 'cycle_day', label: '周期', placeholder: '天', type: 'number' },
-              ].map(({ key, label, placeholder, type, step }) => (
-                <div key={key} className="hf-row">
-                  <label className="hf-label">{label}</label>
-                  <input className="hf-input" type={type} step={step} placeholder={placeholder}
-                    value={hf[key]} onChange={e => setHf(p => ({ ...p, [key]: e.target.value }))} />
-                </div>
-              ))}
-              <div className="hf-btns">
-                <button className="hf-save" onClick={submitHealth}>保存</button>
-                <button className="hf-cancel" onClick={() => setHealthForm(false)}>取消</button>
-              </div>
-            </div>
-          ) : health ? (
-            <div className="health-grid">
-              <div className="health-item">
-                <div className="health-item-label">睡眠</div>
-                <div className="health-item-value">{health.sleep_hours ? `${health.sleep_hours}h` : '—'}</div>
-              </div>
-              <div className="health-item">
-                <div className="health-item-label">静息心率</div>
-                <div className="health-item-value">{health.resting_heart_rate != null ? health.resting_heart_rate : '—'}</div>
-              </div>
-              <div className="health-item">
-                <div className="health-item-label">步数</div>
-                <div className="health-item-value">{health.steps != null ? health.steps.toLocaleString() : '—'}</div>
-              </div>
-              <div className="health-item">
-                <div className="health-item-label">生理周期</div>
-                <div className="health-item-value">{health.cycle_day != null ? `第${health.cycle_day}天` : '—'}</div>
-              </div>
-            </div>
-          ) : (
-            <div className="monitor-empty">
-              {healthMissing ? '健康数据表还没建好' : '点右上角「录入」添加今天的健康数据'}
-            </div>
-          )}
-        </div>
+      <div className="monitor-card">
+        <div className="monitor-card-title">聊天日历</div>
+        <Heatmap dark={dark} />
       </div>
     </div>
   )
