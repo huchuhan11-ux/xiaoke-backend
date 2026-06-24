@@ -493,8 +493,14 @@ body {
 }
 
 .tab-icon {
-  font-size: 18px !important;
-  line-height: 1 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: #4a3728 !important;
+}
+
+.tab-item.active .tab-icon {
+  color: #c08b72 !important;
 }
 
 .tab-label {
@@ -669,6 +675,9 @@ body {
   background: rgba(20, 18, 14, 0.96) !important;
   border-top: 1px solid rgba(201, 162, 39, 0.12) !important;
 }
+
+.dark .tab-icon { color: #9a8a5a !important; }
+.dark .tab-item.active .tab-icon { color: #c9a227 !important; }
 
 .dark .tab-label {
   color: #9a8a5a !important;
