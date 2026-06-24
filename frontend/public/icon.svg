@@ -1,0 +1,9 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" rx="100" fill="#1a1612"/>
+  <circle cx="275" cy="220" r="120" fill="#c9a227" opacity="0.15"/>
+  <circle cx="275" cy="220" r="98" fill="#c9a227" opacity="0.12"/>
+  <circle cx="275" cy="220" r="75" fill="#e8d5a3"/>
+  <circle cx="220" cy="172" r="66" fill="#1a1612"/>
+  <text x="256" y="390" text-anchor="middle" font-family="serif" font-size="36" fill="#c9a227" letter-spacing="6" opacity="0.9">OUR PLACE</text>
+  <text x="256" y="420" text-anchor="middle" font-family="serif" font-size="20" fill="#c9a227" letter-spacing="3" opacity="0.5">2026.05.28</text>
+</svg>

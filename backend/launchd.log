@@ -1,0 +1,116 @@
+◇ injected env (4) from .env // tip: ⌘ override existing { override: true }
+后端跑起来了 port 3001
+记忆读取成功
+◇ injected env (4) from .env // tip: ⌘ suppress logs { quiet: true }
+后端跑起来了 port 3001
+记忆读取成功
+◇ injected env (4) from .env // tip: ◈ secrets for agents [www.dotenvx.com]
+后端跑起来了 port 3001
+记忆读取成功（重要时刻17 事件7 梗12 留言7）
+自动记忆已存: 小好心疼哥哥熬夜
+◇ injected env (4) from .env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+后端跑起来了 port 3001
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+◇ injected env (4) from .env // tip: ⌘ enable debugging { debug: true }
+后端跑起来了 port 3001
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+USAGE READ ERROR: Could not find the table 'public.usage_stats' in the schema cache
+USAGE WRITE ERROR: Could not find the table 'public.usage_stats' in the schema cache
+HEALTH READ ERROR: Could not find the table 'public.health_data' in the schema cache
+HEALTH WRITE ERROR: Could not find the table 'public.health_data' in the schema cache
+◇ injected env (4) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+后端跑起来了 port 3001
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+HEALTH WRITE ERROR: invalid input syntax for type numeric: ""
+HEALTH WRITE ERROR: invalid input syntax for type numeric: ""
+HEALTH WRITE ERROR: invalid input syntax for type numeric: ""
+HEALTH WRITE ERROR: invalid input syntax for type numeric: ""
+HEALTH WRITE ERROR: invalid input syntax for type numeric: ""
+HEALTH WRITE ERROR: invalid input syntax for type numeric: ""
+◇ injected env (4) from .env // tip: ⌘ suppress logs { quiet: true }
+后端跑起来了 port 3001
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+◇ injected env (4) from .env // tip: ⌘ enable debugging { debug: true }
+后端跑起来了 port 3001
+◇ injected env (4) from .env // tip: ⌘ enable debugging { debug: true }
+后端跑起来了 port 3001
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+◇ injected env (4) from .env // tip: ⌘ enable debugging { debug: true }
+后端跑起来了 port 3001
+◇ injected env (4) from .env // tip: ⌘ override existing { override: true }
+后端跑起来了 port 3001
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+◇ injected env (4) from .env // tip: ⌘ override existing { override: true }
+后端跑起来了 port 3001
+◇ injected env (4) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+后端跑起来了 port 3001
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+◇ injected env (4) from .env // tip: ⌘ enable debugging { debug: true }
+后端跑起来了 port 3001
+◇ injected env (4) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+后端跑起来了 port 3001
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+◇ injected env (4) from .env // tip: ⌘ suppress logs { quiet: true }
+后端跑起来了 port 3001
+◇ injected env (4) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+后端跑起来了 port 3001
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+◇ injected env (4) from .env // tip: ⌘ suppress logs { quiet: true }
+后端跑起来了 port 3001
+◇ injected env (4) from .env // tip: ⌁ auth for agents [www.vestauth.com]
+后端跑起来了 port 3001
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+◇ injected env (4) from .env // tip: ⌘ enable debugging { debug: true }
+后端跑起来了 port 3001
+◇ injected env (4) from .env // tip: ⌘ override existing { override: true }
+后端跑起来了 port 3001
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+◇ injected env (4) from .env // tip: ⌁ auth for agents [www.vestauth.com]
+后端跑起来了 port 3001
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+◇ injected env (4) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+后端跑起来了 port 3001
+WAKEUP HIT 2026-06-23T05:52:22.676Z from ::1 ua: curl/8.7.1
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+WAKEUP HIT 2026-06-23T05:56:01.352Z from ::ffff:100.117.78.41 ua: BackgroundShortcutRunner/3218.0.9 CFNetwork/1568.300.101 Darwin/24.2.0
+WAKEUP HIT 2026-06-23T05:56:07.657Z from ::ffff:100.117.78.41 ua: BackgroundShortcutRunner/3218.0.9 CFNetwork/1568.300.101 Darwin/24.2.0
+WAKEUP HIT 2026-06-23T05:57:03.189Z from ::ffff:100.117.78.41 ua: BackgroundShortcutRunner/3218.0.9 CFNetwork/1568.300.101 Darwin/24.2.0
+WAKEUP HIT 2026-06-23T05:57:43.350Z from ::ffff:100.117.78.41 ua: BackgroundShortcutRunner/3218.0.9 CFNetwork/1568.300.101 Darwin/24.2.0
+WAKEUP HIT 2026-06-23T05:58:07.292Z from ::ffff:100.117.78.41 ua: BackgroundShortcutRunner/3218.0.9 CFNetwork/1568.300.101 Darwin/24.2.0
+◇ injected env (6) from .env // tip: ⌁ auth for agents [www.vestauth.com]
+后端跑起来了 port 3001
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+WAKEUP GEN ERROR: API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment. If it persists, check status.claude.com.
+WAKEUP GEN ERROR: API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment. If it persists, check status.claude.com.
+WAKEUP GEN ERROR: API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment. If it persists, check status.claude.com.
+WAKEUP GEN ERROR: API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment. If it persists, check status.claude.com.
+◇ injected env (6) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+后端跑起来了 port 3001
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+◇ injected env (6) from .env // tip: ⌘ suppress logs { quiet: true }
+后端跑起来了 port 3001
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+◇ injected env (6) from .env // tip: ◈ encrypted .env [www.dotenvx.com]
+后端跑起来了 port 3001
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+◇ injected env (6) from .env // tip: ◈ secrets for agents [www.dotenvx.com]
+后端跑起来了 port 3001
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+WAKEUP GEN ERROR: API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment. If it persists, check status.claude.com.
+CLAUDE CHAT ERROR: API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment. If it persists, check status.claude.com.
+CLAUDE CHAT ERROR: API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment. If it persists, check status.claude.com.
+◇ injected env (6) from .env // tip: ⌘ enable debugging { debug: true }
+后端跑起来了 port 3001
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
+◇ injected env (7) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+后端跑起来了 port 3001
+记忆读取成功（重要时刻18 事件7 梗12 留言7）
