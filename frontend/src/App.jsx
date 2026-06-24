@@ -46,7 +46,7 @@ const TAB_ICON = {
   ),
 }
 
-const DEFAULT_PREFS = { nickname: '', style: 'default', styleCustom: '', extra: '' }
+const DEFAULT_PREFS = { nickname: '', style: 'default', styleCustom: '', extra: '', persona: '' }
 
 function loadPrefs() {
   try { return { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem('prefs') || '{}') } }
@@ -77,7 +77,7 @@ function fmtTime(ts) {
   return d.toDateString() === now.toDateString() ? hm : `${d.getMonth()+1}/${d.getDate()} ${hm}`
 }
 
-function Settings() {
+function Settings({ dark, setDark }) {
   const [subview, setSubview] = useState(null)
   const [prefs, setPrefs] = useState(loadPrefs)
   const [styles, setStyles] = useState(loadStyles)
@@ -85,6 +85,15 @@ function Settings() {
   const [addingStyle, setAddingStyle] = useState(false)
   const [newLabel, setNewLabel] = useState('')
   const [newDesc, setNewDesc] = useState('')
+  const [usageData, setUsageData] = useState(null)
+
+  useEffect(() => {
+    if (subview !== 'usage') return
+    Promise.all([
+      fetch(`${API}/api/stats/summary`).then(r => r.json()).catch(() => ({})),
+      fetch(`${API}/api/usage`).then(r => r.json()).catch(() => ({})),
+    ]).then(([s, u]) => setUsageData({ count: s.count ?? '—', pages: u.pages || {} }))
+  }, [subview])
 
   const set = (key, val) => setPrefs(p => ({ ...p, [key]: val }))
 
@@ -110,6 +119,35 @@ function Settings() {
   const editDesc = (id, desc) => persistStyles(styles.map(s => s.id === id ? { ...s, desc } : s))
   const editLabel = (id, label) => persistStyles(styles.map(s => s.id === id ? { ...s, label } : s))
 
+  if (subview === 'usage') {
+    const pages = usageData?.pages || {}
+    const totalSec = Object.values(pages).reduce((sum, v) => sum + (v || 0), 0)
+    return (
+      <div className="prefs-page">
+        <button className="prefs-back" onClick={() => setSubview(null)}>‹ 设置</button>
+        <div className="prefs-title">用量</div>
+        <div className="settings-usage-row-big">
+          <div className="settings-usage-item">
+            <div className="settings-usage-num">{usageData?.count ?? '…'}</div>
+            <div className="settings-usage-lbl">累计消息</div>
+          </div>
+          <div className="settings-usage-item">
+            <div className="settings-usage-num">{totalSec > 0 ? fmtDuration(totalSec) : '—'}</div>
+            <div className="settings-usage-lbl">今日用时</div>
+          </div>
+        </div>
+        <div className="settings-list" style={{ marginTop: 20 }}>
+          {Object.keys(PAGE_META).map(k => (
+            <div key={k} className="settings-row" style={{ cursor: 'default' }}>
+              <span className="settings-row-label">{PAGE_META[k].icon} {PAGE_META[k].label}</span>
+              <span className="settings-row-val">{pages[k] ? fmtDuration(pages[k]) : '—'}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   if (subview === null) {
     return (
       <div className="settings-page">
@@ -121,6 +159,15 @@ function Settings() {
               {styles.find(s => s.id === prefs.style)?.label || '默认'}
             </span>
             <span className="settings-row-arrow">›</span>
+          </div>
+          <div className="settings-row" onClick={() => setSubview('usage')}>
+            <span className="settings-row-label">用量</span>
+            <span className="settings-row-val">消息 & 时长</span>
+            <span className="settings-row-arrow">›</span>
+          </div>
+          <div className="settings-row" onClick={() => setDark(d => !d)}>
+            <span className="settings-row-label">昼夜模式</span>
+            <span className="settings-row-val">{dark ? '夜间 🌙' : '白天 ☀️'}</span>
           </div>
         </div>
       </div>
@@ -191,6 +238,14 @@ function Settings() {
         <textarea className="prefs-textarea" value={prefs.extra}
           onChange={e => set('extra', e.target.value)}
           placeholder="最近的状态、想让他留意的事、任何补充…" rows={3} />
+      </div>
+
+      <div className="prefs-section">
+        <div className="prefs-label">人设</div>
+        <div className="prefs-hint" style={{ marginBottom: 8 }}>自定义补充小克的性格，会加入他的底层设定</div>
+        <textarea className="prefs-textarea" value={prefs.persona}
+          onChange={e => set('persona', e.target.value)}
+          placeholder="例如：他有时会用诗句回应我……他记得我喜欢猫……" rows={4} />
       </div>
 
       <button className="prefs-save-btn" onClick={save}>
@@ -592,8 +647,9 @@ function Home({ dark, setDark }) {
 
   const hh = String(time.getHours()).padStart(2, '0')
   const mm = String(time.getMinutes()).padStart(2, '0')
-  const WDAYS = ['日','一','二','三','四','五','六']
-  const dateStr = `${time.getFullYear()}.${String(time.getMonth()+1).padStart(2,'0')}.${String(time.getDate()).padStart(2,'0')}`
+  const DAYS_EN = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
+  const MONTHS_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  const dateStr = `${DAYS_EN[time.getDay()]}, ${MONTHS_EN[time.getMonth()]} ${time.getDate()} ${time.getFullYear()}`
 
   return (
     <div className="home-v2">
@@ -604,22 +660,22 @@ function Home({ dark, setDark }) {
           {dark ? '☀️' : '🌙'}
         </button>
         <div className="hv2-clock">{hh}:{mm}</div>
-        <div className="hv2-date">周{WDAYS[time.getDay()]} · {dateStr}</div>
+        <div className="hv2-date">{dateStr}</div>
         {greeting ? <div className="hv2-greeting">{greeting}</div> : null}
       </div>
 
-      {/* 数据卡片 */}
-      <div className="hv2-stats">
-        <div className="hv2-stat">
-          <div className="hv2-stat-num">{daysTogether()}</div>
-          <div className="hv2-stat-label">在一起 · 天</div>
+      {/* 数据卡片 bento */}
+      <div className="hv2-bento">
+        <div className="hv2-bc">
+          <div className="hv2-bc-num">{daysTogether()}</div>
+          <div className="hv2-bc-lbl">在一起</div>
+          <div className="hv2-bc-unit">天</div>
         </div>
-        {msgCount !== null && (
-          <div className="hv2-stat">
-            <div className="hv2-stat-num">{msgCount}</div>
-            <div className="hv2-stat-label">对话 · 条</div>
-          </div>
-        )}
+        <div className="hv2-bc">
+          <div className="hv2-bc-num">{msgCount ?? '—'}</div>
+          <div className="hv2-bc-lbl">对话</div>
+          <div className="hv2-bc-unit">条</div>
+        </div>
       </div>
 
       {/* 天气 */}
@@ -732,6 +788,8 @@ function Monitor({ dark }) {
   const [health, setHealth] = useState(null)
   const [healthMissing, setHealthMissing] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [healthForm, setHealthForm] = useState(false)
+  const [hf, setHf] = useState({ sleep_hours: '', resting_heart_rate: '', steps: '', cycle_day: '' })
 
   const fetchData = () => Promise.all([
     fetch(`${API}/api/usage`).then(r => r.json()).catch(() => ({ pages: {} })),
@@ -750,6 +808,24 @@ function Monitor({ dark }) {
     document.addEventListener('visibilitychange', onVisible)
     return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVisible) }
   }, [])
+
+  const submitHealth = async () => {
+    const body = {}
+    if (hf.sleep_hours !== '') body.sleep_hours = parseFloat(hf.sleep_hours)
+    if (hf.resting_heart_rate !== '') body.resting_heart_rate = parseInt(hf.resting_heart_rate)
+    if (hf.steps !== '') body.steps = parseInt(hf.steps)
+    if (hf.cycle_day !== '') body.cycle_day = parseInt(hf.cycle_day)
+    try {
+      await fetch(`${API}/api/health`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+      setHealthForm(false)
+      setHf({ sleep_hours: '', resting_heart_rate: '', steps: '', cycle_day: '' })
+      fetchData()
+    } catch {}
+  }
 
   const pageKeys = Object.keys(PAGE_META)
   const totalSeconds = pageKeys.reduce((sum, k) => sum + (usage[k] || 0), 0)
@@ -792,31 +868,63 @@ function Monitor({ dark }) {
           <Heatmap dark={dark} />
         </div>
         <div className="monitor-card">
-          <div className="monitor-card-title">健康</div>
-        {health ? (
-          <div className="health-grid">
-            <div className="health-item">
-              <div className="health-item-label">睡眠</div>
-              <div className="health-item-value">{health.sleep_hours ? `${health.sleep_hours}h` : '—'}</div>
-            </div>
-            <div className="health-item">
-              <div className="health-item-label">静息心率</div>
-              <div className="health-item-value">{health.resting_heart_rate != null ? health.resting_heart_rate : '—'}</div>
-            </div>
-            <div className="health-item">
-              <div className="health-item-label">步数</div>
-              <div className="health-item-value">{health.steps != null ? health.steps.toLocaleString() : '—'}</div>
-            </div>
-            <div className="health-item">
-              <div className="health-item-label">生理周期</div>
-              <div className="health-item-value">{health.cycle_day != null ? `第${health.cycle_day}天` : '—'}</div>
-            </div>
+          <div className="monitor-card-title" style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <span>健康</span>
+            {!healthMissing && !healthForm && (
+              <button className="health-edit-btn" onClick={() => {
+                if (health) setHf({
+                  sleep_hours: health.sleep_hours ?? '',
+                  resting_heart_rate: health.resting_heart_rate ?? '',
+                  steps: health.steps ?? '',
+                  cycle_day: health.cycle_day ?? '',
+                })
+                setHealthForm(true)
+              }}>{health ? '更新' : '录入'}</button>
+            )}
           </div>
-        ) : (
-          <div className="monitor-empty">
-            {healthMissing ? '健康数据表还没建好' : '还没接健康数据，去手机设置一个「快捷指令」自动同步'}
-          </div>
-        )}
+          {healthForm ? (
+            <div className="health-form">
+              {[
+                { key: 'sleep_hours', label: '睡眠', placeholder: '小时', type: 'number', step: '0.5' },
+                { key: 'resting_heart_rate', label: '心率', placeholder: 'bpm', type: 'number' },
+                { key: 'steps', label: '步数', placeholder: '步', type: 'number' },
+                { key: 'cycle_day', label: '周期', placeholder: '天', type: 'number' },
+              ].map(({ key, label, placeholder, type, step }) => (
+                <div key={key} className="hf-row">
+                  <label className="hf-label">{label}</label>
+                  <input className="hf-input" type={type} step={step} placeholder={placeholder}
+                    value={hf[key]} onChange={e => setHf(p => ({ ...p, [key]: e.target.value }))} />
+                </div>
+              ))}
+              <div className="hf-btns">
+                <button className="hf-save" onClick={submitHealth}>保存</button>
+                <button className="hf-cancel" onClick={() => setHealthForm(false)}>取消</button>
+              </div>
+            </div>
+          ) : health ? (
+            <div className="health-grid">
+              <div className="health-item">
+                <div className="health-item-label">睡眠</div>
+                <div className="health-item-value">{health.sleep_hours ? `${health.sleep_hours}h` : '—'}</div>
+              </div>
+              <div className="health-item">
+                <div className="health-item-label">静息心率</div>
+                <div className="health-item-value">{health.resting_heart_rate != null ? health.resting_heart_rate : '—'}</div>
+              </div>
+              <div className="health-item">
+                <div className="health-item-label">步数</div>
+                <div className="health-item-value">{health.steps != null ? health.steps.toLocaleString() : '—'}</div>
+              </div>
+              <div className="health-item">
+                <div className="health-item-label">生理周期</div>
+                <div className="health-item-value">{health.cycle_day != null ? `第${health.cycle_day}天` : '—'}</div>
+              </div>
+            </div>
+          ) : (
+            <div className="monitor-empty">
+              {healthMissing ? '健康数据表还没建好' : '点右上角「录入」添加今天的健康数据'}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1168,7 +1276,7 @@ export default function App() {
         )}
         {view === 'records' && <Records />}
         {view === 'monitor' && <Monitor dark={dark} />}
-        {view === 'settings' && <Settings />}
+        {view === 'settings' && <Settings dark={dark} setDark={setDark} />}
       </div>
 
       <div className="tabbar">

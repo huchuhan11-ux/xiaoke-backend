@@ -182,6 +182,7 @@ function buildPrefsPrompt(prefs) {
     parts.push(STYLE_MAP[prefs.style])
   }
   if (prefs.styleCustom && prefs.styleCustom.trim()) parts.push(prefs.styleCustom.trim())
+  if (prefs.persona && prefs.persona.trim()) parts.push(`【人设补充】\n${prefs.persona.trim()}`)
   if (prefs.extra && prefs.extra.trim()) parts.push(`她补充说：${prefs.extra.trim()}`)
   return parts.length ? '\n\n【偏好设置】\n' + parts.join('\n') : ''
 }
