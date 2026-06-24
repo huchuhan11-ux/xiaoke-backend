@@ -261,6 +261,25 @@ async function askClaude(prompt, systemAppend) {
 }
 
 // ── 聊天 ──
+app.get('/api/weather', async (req, res) => {
+  try {
+    const r = await fetch('https://wttr.in/?format=j1')
+    const data = await r.json()
+    const cur = data.current_condition[0]
+    const area = data.nearest_area[0]
+    res.json({
+      city: area.areaName[0].value,
+      temp: cur.temp_C,
+      feelsLike: cur.FeelsLikeC,
+      desc: cur.lang_zh?.[0]?.value || cur.weatherDesc[0].value,
+      humidity: cur.humidity,
+      code: cur.weatherCode
+    })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
 app.get('/api/stats/summary', async (req, res) => {
   const { count } = await supabase.from('messages').select('*', { count: 'exact', head: true })
   res.json({ count: count || 0 })

@@ -1014,6 +1014,44 @@ button {
   border-bottom: 0.5px solid rgba(192,139,114,0.1);
 }
 
+/* weather card */
+.hv2-weather {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 24px;
+  border-bottom: 0.5px solid rgba(192,139,114,0.1);
+  flex-wrap: wrap;
+}
+
+.hv2-weather-icon { font-size: 22px; }
+
+.hv2-weather-temp {
+  font-size: 28px;
+  font-weight: 200;
+  color: #3a2a1e;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.hv2-weather-desc {
+  font-size: 13px;
+  color: #6b5242;
+}
+
+.hv2-weather-city {
+  font-size: 11px;
+  color: #a8765f;
+  letter-spacing: 0.04em;
+}
+
+.hv2-weather-sub {
+  font-size: 11px;
+  color: #c0a090;
+  margin-left: auto;
+  letter-spacing: 0.02em;
+}
+
 /* dark */
 .dark .hv2-clock { color: #e8d5a3; }
 .dark .hv2-date { color: #9a8a5a; }
@@ -1025,9 +1063,14 @@ button {
   background: linear-gradient(160deg, rgba(201,162,39,0.06) 0%, transparent 60%);
   border-bottom-color: rgba(201,162,39,0.1);
 }
-.dark .hv2-stats, .dark .hv2-stat, .dark .hv2-section, .dark .hv2-poke {
+.dark .hv2-stats, .dark .hv2-stat, .dark .hv2-section, .dark .hv2-poke, .dark .hv2-weather {
   border-color: rgba(201,162,39,0.1);
 }
+
+.dark .hv2-weather-temp { color: #e8d5a3; }
+.dark .hv2-weather-desc { color: #c8b898; }
+.dark .hv2-weather-city { color: #9a8a5a; }
+.dark .hv2-weather-sub { color: #7a6a4a; }
 
 /* ── Records ── */
 .records-page {

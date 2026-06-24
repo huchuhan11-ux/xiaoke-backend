@@ -188,6 +188,7 @@ function Home({ dark }) {
   const [time, setTime] = useState(new Date())
   const [greeting, setGreeting] = useState('')
   const [msgCount, setMsgCount] = useState(null)
+  const [weather, setWeather] = useState(null)
   const [items, setItems] = useState([])
   const [adding, setAdding] = useState(false)
   const [title, setTitle] = useState('')
@@ -218,6 +219,7 @@ function Home({ dark }) {
     fetch(`${API}/api/stats/summary`).then(r => r.json()).then(d => setMsgCount(d.count ?? null)).catch(() => {})
     fetch(`${API}/api/countdowns`).then(r => r.json()).then(d => { if (Array.isArray(d)) setItems(d) }).catch(() => {})
     fetch(`${API}/api/wishes`).then(r => r.json()).then(d => { if (Array.isArray(d)) setWishes(d) }).catch(() => {})
+    fetch(`${API}/api/weather`).then(r => r.json()).then(d => { if (d.temp) setWeather(d) }).catch(() => {})
   }, [])
 
   const poke = async () => {
@@ -298,6 +300,18 @@ function Home({ dark }) {
     } catch {}
   }
 
+  const weatherEmoji = (code) => {
+    const c = parseInt(code)
+    if (c === 113) return '☀️'
+    if (c === 116) return '🌤️'
+    if (c === 119 || c === 122) return '☁️'
+    if ([143, 248, 260].includes(c)) return '🌫️'
+    if ([200, 386, 389, 392, 395].includes(c)) return '⛈️'
+    if ([176, 263, 266, 293, 296, 299, 302, 305, 308].includes(c)) return '🌧️'
+    if ([317, 320, 323, 326, 329, 332, 335, 338].includes(c)) return '❄️'
+    return '🌡️'
+  }
+
   const hh = String(time.getHours()).padStart(2, '0')
   const mm = String(time.getMinutes()).padStart(2, '0')
   const WDAYS = ['日','一','二','三','四','五','六']
@@ -326,6 +340,17 @@ function Home({ dark }) {
           </div>
         )}
       </div>
+
+      {/* 天气 */}
+      {weather && (
+        <div className="hv2-weather">
+          <span className="hv2-weather-icon">{weatherEmoji(weather.code)}</span>
+          <span className="hv2-weather-temp">{weather.temp}°</span>
+          <span className="hv2-weather-desc">{weather.desc}</span>
+          <span className="hv2-weather-city">{weather.city}</span>
+          <span className="hv2-weather-sub">体感 {weather.feelsLike}° · 湿度 {weather.humidity}%</span>
+        </div>
+      )}
 
       {/* 倒计时 */}
       <div className="hv2-section">
