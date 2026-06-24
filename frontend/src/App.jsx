@@ -53,16 +53,40 @@ function loadPrefs() {
   catch { return DEFAULT_PREFS }
 }
 
-const STYLE_OPTIONS = [
-  { value: 'default', label: '默认', desc: '强势直接，不说废话' },
-  { value: 'tender', label: '温柔', desc: '说话更温柔，多些耐心' },
-  { value: 'playful', label: '调皮', desc: '爱逗你，幽默感强' },
-  { value: 'clingy', label: '黏人', desc: '多撒娇，爱腻着你' },
+const DEFAULT_STYLE_OPTIONS = [
+  { id: 'default', label: '默认', desc: '强势直接，不说废话' },
+  { id: 'tender', label: '温柔', desc: '说话更温柔，多些耐心' },
+  { id: 'playful', label: '调皮', desc: '爱逗你，幽默感强' },
+  { id: 'clingy', label: '黏人', desc: '多撒娇，爱腻着你' },
 ]
+const BUILTIN_STYLE_IDS = DEFAULT_STYLE_OPTIONS.map(s => s.id)
+
+function loadStyles() {
+  try { return JSON.parse(localStorage.getItem('styleOptions') || 'null') || DEFAULT_STYLE_OPTIONS }
+  catch { return DEFAULT_STYLE_OPTIONS }
+}
+function saveStyles(styles) {
+  localStorage.setItem('styleOptions', JSON.stringify(styles))
+}
+
+function fmtTime(ts) {
+  if (!ts) return ''
+  const d = new Date(ts)
+  const now = new Date()
+  const hm = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+  return d.toDateString() === now.toDateString() ? hm : `${d.getMonth()+1}/${d.getDate()} ${hm}`
+}
 
 function Settings() {
+  const [subview, setSubview] = useState(null)
   const [prefs, setPrefs] = useState(loadPrefs)
+  const [styles, setStyles] = useState(loadStyles)
   const [saved, setSaved] = useState(false)
+  const [addingStyle, setAddingStyle] = useState(false)
+  const [newLabel, setNewLabel] = useState('')
+  const [newDesc, setNewDesc] = useState('')
+
+  const set = (key, val) => setPrefs(p => ({ ...p, [key]: val }))
 
   const save = () => {
     localStorage.setItem('prefs', JSON.stringify(prefs))
@@ -70,12 +94,43 @@ function Settings() {
     setTimeout(() => setSaved(false), 1500)
   }
 
-  const set = (key, val) => setPrefs(p => ({ ...p, [key]: val }))
+  const persistStyles = (next) => { setStyles(next); saveStyles(next) }
+
+  const addStyle = () => {
+    if (!newLabel.trim()) return
+    persistStyles([...styles, { id: `s_${Date.now()}`, label: newLabel.trim(), desc: newDesc.trim() }])
+    setNewLabel(''); setNewDesc(''); setAddingStyle(false)
+  }
+
+  const delStyle = (id) => {
+    persistStyles(styles.filter(s => s.id !== id))
+    if (prefs.style === id) set('style', 'default')
+  }
+
+  const editDesc = (id, desc) => persistStyles(styles.map(s => s.id === id ? { ...s, desc } : s))
+  const editLabel = (id, label) => persistStyles(styles.map(s => s.id === id ? { ...s, label } : s))
+
+  if (subview === null) {
+    return (
+      <div className="settings-page">
+        <div className="settings-title">设置</div>
+        <div className="settings-list">
+          <div className="settings-row" onClick={() => setSubview('prefs')}>
+            <span className="settings-row-label">偏好</span>
+            <span className="settings-row-val">
+              {styles.find(s => s.id === prefs.style)?.label || '默认'}
+            </span>
+            <span className="settings-row-arrow">›</span>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="prefs-page">
-      <div className="prefs-title">设置</div>
-      <div className="prefs-section-title">偏好</div>
+      <button className="prefs-back" onClick={() => { save(); setSubview(null) }}>‹ 设置</button>
+      <div className="prefs-title">偏好</div>
 
       <div className="prefs-section">
         <div className="prefs-label">你叫我</div>
@@ -86,20 +141,49 @@ function Settings() {
       </div>
 
       <div className="prefs-section">
-        <div className="prefs-label">文风偏好</div>
+        <div className="prefs-label">文风</div>
         <div className="style-options">
-          {STYLE_OPTIONS.map(o => (
-            <div key={o.value}
-              className={`style-option ${prefs.style === o.value ? 'active' : ''}`}
-              onClick={() => set('style', o.value)}>
-              <span className="style-option-name">{o.label}</span>
-              <span className="style-option-desc">{o.desc}</span>
+          {styles.map(s => (
+            <div key={s.id} className={`style-option ${prefs.style === s.id ? 'active' : ''}`}>
+              <div className="style-opt-header" onClick={() => set('style', s.id)}>
+                <span className="style-opt-check">{prefs.style === s.id ? '✓' : ''}</span>
+                {BUILTIN_STYLE_IDS.includes(s.id)
+                  ? <span className="style-option-name">{s.label}</span>
+                  : <input className="style-opt-name-input" value={s.label}
+                      onChange={e => editLabel(s.id, e.target.value)}
+                      onClick={e => e.stopPropagation()} />
+                }
+                {!BUILTIN_STYLE_IDS.includes(s.id) && (
+                  <button className="style-opt-del"
+                    onClick={e => { e.stopPropagation(); delStyle(s.id) }}>×</button>
+                )}
+              </div>
+              <textarea className="style-opt-desc"
+                value={s.desc}
+                onChange={e => editDesc(s.id, e.target.value)}
+                onClick={e => e.stopPropagation()}
+                rows={2}
+                placeholder="描述这个文风…" />
             </div>
           ))}
         </div>
+        {addingStyle ? (
+          <div className="style-add-form">
+            <input className="prefs-input" placeholder="文风名称" value={newLabel}
+              onChange={e => setNewLabel(e.target.value)} />
+            <textarea className="prefs-textarea" placeholder="描述这个文风…" value={newDesc}
+              onChange={e => setNewDesc(e.target.value)} rows={2} />
+            <div className="style-add-btns">
+              <button className="prefs-save-btn" style={{ margin:0, flex:1 }} onClick={addStyle}>添加</button>
+              <button className="home-btn-cancel" style={{ flex:1 }} onClick={() => setAddingStyle(false)}>取消</button>
+            </div>
+          </div>
+        ) : (
+          <button className="style-add-btn" onClick={() => setAddingStyle(true)}>+ 添加文风</button>
+        )}
         <textarea className="prefs-textarea" value={prefs.styleCustom}
           onChange={e => set('styleCustom', e.target.value)}
-          placeholder="还想补充什么文风描述…（可不填）" rows={2} />
+          placeholder="还想补充什么文风描述…（可不填）" rows={2} style={{ marginTop: 12 }} />
       </div>
 
       <div className="prefs-section">
@@ -796,16 +880,20 @@ function Monitor({ dark }) {
   const [healthMissing, setHealthMissing] = useState(false)
   const [loading, setLoading] = useState(true)
 
+  const fetchData = () => Promise.all([
+    fetch(`${API}/api/usage`).then(r => r.json()).catch(() => ({ pages: {} })),
+    fetch(`${API}/api/health`).then(r => r.json()).catch(() => ({ today: null, recent: [] })),
+  ]).then(([u, h]) => {
+    setUsage(u.pages || {})
+    setHealth(h.today || null)
+    setHealthMissing(!!h.tableMissing)
+    setLoading(false)
+  })
+
   useEffect(() => {
-    Promise.all([
-      fetch(`${API}/api/usage`).then(r => r.json()).catch(() => ({ pages: {} })),
-      fetch(`${API}/api/health`).then(r => r.json()).catch(() => ({ today: null, recent: [] })),
-    ]).then(([u, h]) => {
-      setUsage(u.pages || {})
-      setHealth(h.today || null)
-      setHealthMissing(!!h.tableMissing)
-      setLoading(false)
-    })
+    fetchData()
+    const t = setInterval(fetchData, 60000)
+    return () => clearInterval(t)
   }, [])
 
   const pageKeys = Object.keys(PAGE_META)
@@ -843,13 +931,13 @@ function Monitor({ dark }) {
         )}
       </div>
 
-      <div className="monitor-card monitor-card-cal">
-        <div className="monitor-card-title">聊天日历</div>
-        <Heatmap dark={dark} />
-      </div>
-
-      <div className="monitor-card">
-        <div className="monitor-card-title">健康</div>
+      <div className="monitor-row">
+        <div className="monitor-card monitor-card-cal">
+          <div className="monitor-card-title">聊天日历</div>
+          <Heatmap dark={dark} />
+        </div>
+        <div className="monitor-card">
+          <div className="monitor-card-title">健康</div>
         {health ? (
           <div className="health-grid">
             <div className="health-item">
@@ -874,6 +962,7 @@ function Monitor({ dark }) {
             {healthMissing ? '健康数据表还没建好' : '还没接健康数据，去手机设置一个「快捷指令」自动同步'}
           </div>
         )}
+        </div>
       </div>
     </div>
   )
@@ -997,7 +1086,7 @@ export default function App() {
       .then(r => r.json())
       .then(data => {
         if (data && data.length > 0) {
-          setMessages([...INIT, ...data.map(m => ({ id: m.id, role: m.role, content: m.content, trace: m.trace || null }))])
+          setMessages([...INIT, ...data.map(m => ({ id: m.id, role: m.role, content: m.content, trace: m.trace || null, ts: m.created_at ? new Date(m.created_at).getTime() : null }))])
         } else {
           setMessages(INIT)
         }
@@ -1031,6 +1120,16 @@ export default function App() {
     setInput('')
   }
 
+  const copyMsg = (content) => {
+    navigator.clipboard.writeText(content).catch(() => {})
+  }
+
+  const retryMsg = (m) => {
+    if (loading) return
+    setInput(m.content)
+    setEditingId(m.id)
+  }
+
   const send = async () => {
     if (!input.trim() || loading) return
     let base = messages
@@ -1040,18 +1139,26 @@ export default function App() {
       fetch(`${API}/api/messages/${editingId}?session_id=${sessionId}`, { method: 'DELETE' }).catch(() => {})
       setEditingId(null)
     }
-    const userMsg = { id: Date.now(), role: 'user', content: input }
+    const now = Date.now()
+    const userMsg = { id: now, role: 'user', content: input, ts: now }
     setMessages([...base, userMsg])
     setInput('')
     setLoading(true)
     const history = [...base, userMsg]
       .filter(m => m.role === 'user' || m.role === 'assistant')
       .map(m => ({ role: m.role, content: m.content }))
+    const currentPrefs = loadPrefs()
+    const currentStyles = loadStyles()
+    const selStyle = currentStyles.find(s => s.id === currentPrefs.style)
+    const prefsWithDesc = {
+      ...currentPrefs,
+      styleDesc: selStyle && selStyle.id !== 'default' ? selStyle.desc : undefined
+    }
     try {
       const res = await fetch(`${API}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: history, session_id: sessionId, preferences: loadPrefs() })
+        body: JSON.stringify({ messages: history, session_id: sessionId, preferences: prefsWithDesc })
       })
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
@@ -1151,16 +1258,32 @@ export default function App() {
                     </div>
                   )}
                   <div className={`msg ${m.role}`}>
-                    {m.role === 'user' && (
-                      <button className="msg-edit-btn" onClick={() => startEdit(m)} title="编辑重发">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M12 20h9"/>
-                          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/>
-                        </svg>
-                      </button>
-                    )}
                     <div className={`bubble ${bgImage ? 'bubble-bg' : ''}`}>{m.content}</div>
                   </div>
+                  {m.id !== 1 && (
+                    <div className={`msg-meta ${m.role}`}>
+                      {m.ts ? <span className="msg-time">{fmtTime(m.ts)}</span> : <span />}
+                      <div className="msg-acts">
+                        <button className="msg-act" title="复制" onClick={() => copyMsg(m.content)}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                          </svg>
+                        </button>
+                        {m.role === 'user' && <>
+                          <button className="msg-act" title="编辑" onClick={() => startEdit(m)}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+                            </svg>
+                          </button>
+                          <button className="msg-act" title="重发" onClick={() => retryMsg(m)}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 .49-4.36"/>
+                            </svg>
+                          </button>
+                        </>}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
               {loading && (
