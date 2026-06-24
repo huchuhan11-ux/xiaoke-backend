@@ -548,7 +548,7 @@ function Home({ dark, setDark }) {
   }, [])
 
   useEffect(() => {
-    fetch(`${API}/api/wakeup`).then(r => r.json()).then(d => setGreeting(d.text || '')).catch(() => {})
+    fetch(`${API}/api/wakeup?_=${Date.now()}`).then(r => r.json()).then(d => setGreeting(d.text || '')).catch(() => {})
     fetch(`${API}/api/stats/summary`).then(r => r.json()).then(d => setMsgCount(d.count ?? null)).catch(() => {})
     fetch(`${API}/api/countdowns`).then(r => r.json()).then(d => { if (Array.isArray(d)) setItems(d) }).catch(() => {})
     fetch(`${API}/api/wishes`).then(r => r.json()).then(d => { if (Array.isArray(d)) setWishes(d) }).catch(() => {})
@@ -664,36 +664,30 @@ function Home({ dark, setDark }) {
         {greeting ? <div className="hv2-greeting">{greeting}</div> : null}
       </div>
 
-      {/* 数据卡片 bento */}
+      {/* 四格 bento：统计 + 天气 */}
       <div className="hv2-bento">
         <div className="hv2-bc">
-          <div className="hv2-bc-num">{daysTogether()}</div>
           <div className="hv2-bc-lbl">在一起</div>
+          <div className="hv2-bc-num">{daysTogether()}</div>
           <div className="hv2-bc-unit">天</div>
         </div>
         <div className="hv2-bc">
-          <div className="hv2-bc-num">{msgCount ?? '—'}</div>
           <div className="hv2-bc-lbl">对话</div>
+          <div className="hv2-bc-num">{msgCount ?? '—'}</div>
           <div className="hv2-bc-unit">条</div>
         </div>
-      </div>
-
-      {/* 天气 */}
-      {weather.length > 0 && (
-        <div className="hv2-weather">
-          {weather.map(w => (
-            <div key={w.city} className="hv2-wc">
-              <div className="hv2-wc-city">{w.city}</div>
-              <div className="hv2-wc-main">
-                <span className="hv2-wc-icon">{weatherEmoji(w.code)}</span>
-                <span className="hv2-wc-temp">{w.temp}°</span>
-              </div>
-              <div className="hv2-wc-desc">{w.desc}</div>
-              <div className="hv2-wc-sub">体感 {w.feelsLike}° · {w.humidity}%</div>
+        {weather.map(w => (
+          <div key={w.city} className="hv2-bc hv2-bc-wx">
+            <div className="hv2-bc-lbl">{w.city}</div>
+            <div className="hv2-bc-wx-row">
+              <span className="hv2-bc-wxicon">{weatherEmoji(w.code)}</span>
+              <span className="hv2-bc-temp">{w.temp}°</span>
             </div>
-          ))}
-        </div>
-      )}
+            <div className="hv2-bc-wxdesc">{w.desc}</div>
+            <div className="hv2-bc-wxsub">体感 {w.feelsLike}° · {w.humidity}%</div>
+          </div>
+        ))}
+      </div>
 
       {/* 倒计时 */}
       <div className="hv2-section">

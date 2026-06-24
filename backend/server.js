@@ -188,11 +188,12 @@ function buildPrefsPrompt(prefs) {
 }
 
 async function streamClaude(prompt, systemAppend, onDelta) {
-  const system = systemAppend ? `${BASE_SYSTEM}\n\n${systemAppend}` : BASE_SYSTEM
+  const systemBlocks = [{ type: 'text', text: BASE_SYSTEM, cache_control: { type: 'ephemeral' } }]
+  if (systemAppend) systemBlocks.push({ type: 'text', text: systemAppend })
   const stream = anthropic.messages.stream({
     model: 'claude-sonnet-4-5',
     max_tokens: 1024,
-    system,
+    system: systemBlocks,
     messages: [{ role: 'user', content: prompt }]
   })
   let fullText = ''
@@ -207,11 +208,12 @@ async function streamClaude(prompt, systemAppend, onDelta) {
 
 // 一次性生成：用于日记评论/写信/留言，不需要流式
 async function askClaude(prompt, systemAppend) {
-  const system = systemAppend ? `${BASE_SYSTEM}\n\n${systemAppend}` : BASE_SYSTEM
+  const systemBlocks = [{ type: 'text', text: BASE_SYSTEM, cache_control: { type: 'ephemeral' } }]
+  if (systemAppend) systemBlocks.push({ type: 'text', text: systemAppend })
   const res = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 1024,
-    system,
+    system: systemBlocks,
     messages: [{ role: 'user', content: prompt }]
   })
   return res.content[0].text
