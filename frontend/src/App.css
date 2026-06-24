@@ -281,7 +281,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 14px 52px 14px 20px;
+  padding: 14px 16px 14px 20px;
   border-bottom: 0.5px solid rgba(192,139,114,0.18);
   flex-shrink: 0;
 }
@@ -1033,14 +1033,14 @@ button {
 .hv2-bc-wx-row {
   display: flex;
   align-items: baseline;
-  gap: 5px;
-  margin-bottom: 4px;
+  gap: 4px;
+  margin: 2px 0;
 }
 
-.hv2-bc-wxicon { font-size: 22px; line-height: 1; }
+.hv2-bc-wxicon { font-size: 18px; line-height: 1; }
 
 .hv2-bc-temp {
-  font-size: 38px;
+  font-size: 30px;
   font-weight: 300;
   color: #c08b72;
   line-height: 1;
@@ -1048,9 +1048,9 @@ button {
 }
 
 .hv2-bc-wxdesc {
-  font-size: 11px;
+  font-size: 10px;
   color: #6b5242;
-  margin-top: 4px;
+  margin-top: 3px;
 }
 
 .hv2-bc-wxsub {
@@ -1058,6 +1058,93 @@ button {
   color: #b09a8a;
   margin-top: 2px;
 }
+
+/* dual-city weather card */
+.hv2-bc-wx2 { display: flex; flex-direction: column; justify-content: space-between; }
+.hv2-wx2-sep {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 0.5px solid rgba(192,139,114,0.18);
+}
+.dark .hv2-wx2-sep { border-color: rgba(201,162,39,0.15); }
+
+/* countdown bento card */
+.hv2-bc-cd { display: flex; flex-direction: column; }
+.hv2-bc-cd-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.hv2-cd-add-btn {
+  background: none;
+  border: none;
+  font-size: 16px;
+  color: #c08b72;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+}
+.hv2-cd-list { display: flex; flex-direction: column; gap: 5px; flex: 1; }
+.hv2-cd-row {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 11px;
+}
+.hv2-cd-title {
+  flex: 1;
+  color: #4a3728;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hv2-cd-days {
+  color: #c08b72;
+  font-weight: 500;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.hv2-cd-del {
+  background: none;
+  border: none;
+  color: #c0a090;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0 0 0 2px;
+  line-height: 1;
+}
+.hv2-cd-form { margin-top: 8px; display: flex; flex-direction: column; gap: 5px; }
+.hv2-cd-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(192,139,114,0.08);
+  border: 0.5px solid rgba(192,139,114,0.25);
+  border-radius: 6px;
+  padding: 4px 7px;
+  font-size: 11px;
+  color: #3a2a1e;
+  font-family: inherit;
+  outline: none;
+}
+.hv2-cd-frow { display: flex; gap: 5px; align-items: center; }
+.hv2-cd-frow .hv2-cd-input { flex: 1; }
+.hv2-cd-confirm {
+  background: rgba(192,139,114,0.18);
+  border: none;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #7a4a2e;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.dark .hv2-cd-title { color: #e8d5a3; }
+.dark .hv2-cd-days { color: #c9a227; }
+.dark .hv2-cd-del { color: #6a5a4a; }
+.dark .hv2-cd-add-btn { color: #c9a227; }
+.dark .hv2-cd-input { background: rgba(201,162,39,0.06); border-color: rgba(201,162,39,0.2); color: #e8d5a3; }
 
 .hv2-section {
   padding: 20px 24px;

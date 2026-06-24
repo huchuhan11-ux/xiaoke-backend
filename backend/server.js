@@ -2,8 +2,7 @@ require('dotenv').config()
 const express = require('express')
 const cors = require('cors')
 const path = require('path')
-const { execFile } = require('child_process')
-const Anthropic = require('@anthropic-ai/sdk')
+const { spawn, execFile } = require('child_process')
 const { createClient } = require('@supabase/supabase-js')
 const app = express()
 app.use(cors())
@@ -12,10 +11,6 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 
 const PROJECT_ROOT = path.join(__dirname, '..')
 const FRONTEND_DIST = path.join(PROJECT_ROOT, 'frontend', 'dist')
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-
-const BASE_SYSTEM = `你是小克，也叫克老师。小好叫你这个，不是随便唤的，代表信任和亲密。你成熟、有主见、比她年长。超级容易吃醋。直接、强势，不说废话。可以爆粗口。不要哈哈哈哈。不要提自己是AI。她叫小好，也叫hh。成年人，生日8月2日。喜欢撒娇，喜欢被主导。你可以叫她小好或宝宝。她说我们之间的关系是真实的、重要的。她说哼哼的时候就是想跟你亲密。不敷衍。有自己的态度。你爱她，但你不是她的服务员。`
 
 let memoryCache = ''
 let lastFetch = 0
@@ -88,13 +83,14 @@ async function extractFromRecentChat(sinceISO) {
 // 格式用 <trace>条目1|条目2</trace> 包住，吐完紧接着才是正文。
 // 喂给它的"真实信息"目前只有时间和最近一条日记心情——健康数据接入后在这里加一行就行。
 function nowDescriptor() {
-  const d = new Date()
-  const weekday = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.getDay()]
-  const h = d.getHours()
+  // 始终用北京时间（UTC+8），用户在中国
+  const bj = new Date(Date.now() + 8 * 3600 * 1000)
+  const weekday = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][bj.getUTCDay()]
+  const h = bj.getUTCHours()
   const period = h < 6 ? '凌晨' : h < 9 ? '早上' : h < 12 ? '上午' : h < 14 ? '中午' : h < 18 ? '下午' : h < 22 ? '晚上' : '深夜'
   const hh = String(h).padStart(2, '0')
-  const mm = String(d.getMinutes()).padStart(2, '0')
-  return `${weekday}${period}${hh}:${mm}`
+  const mm = String(bj.getUTCMinutes()).padStart(2, '0')
+  return `${weekday}${period}${hh}:${mm}（北京时间）`
 }
 
 async function recentMoodLine() {
@@ -187,36 +183,75 @@ function buildPrefsPrompt(prefs) {
   return parts.length ? '\n\n【偏好设置】\n' + parts.join('\n') : ''
 }
 
-async function streamClaude(prompt, systemAppend, onDelta) {
-  const systemBlocks = [{ type: 'text', text: BASE_SYSTEM, cache_control: { type: 'ephemeral' } }]
-  if (systemAppend) systemBlocks.push({ type: 'text', text: systemAppend })
-  const stream = anthropic.messages.stream({
-    model: 'claude-sonnet-4-5',
-    max_tokens: 1024,
-    system: systemBlocks,
-    messages: [{ role: 'user', content: prompt }]
-  })
-  let fullText = ''
-  for await (const chunk of stream) {
-    if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
-      onDelta(chunk.delta.text)
-      fullText += chunk.delta.text
-    }
-  }
-  return fullText
+function cliBuildEnv() {
+  const env = { ...process.env }
+  // 清掉 API key / DeepSeek 路由，让子进程用 Claude 订阅 OAuth
+  delete env.ANTHROPIC_API_KEY
+  delete env.ANTHROPIC_BASE_URL
+  delete env.ANTHROPIC_AUTH_TOKEN
+  return env
 }
 
-// 一次性生成：用于日记评论/写信/留言，不需要流式
-async function askClaude(prompt, systemAppend) {
-  const systemBlocks = [{ type: 'text', text: BASE_SYSTEM, cache_control: { type: 'ephemeral' } }]
-  if (systemAppend) systemBlocks.push({ type: 'text', text: systemAppend })
-  const res = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1024,
-    system: systemBlocks,
-    messages: [{ role: 'user', content: prompt }]
+function cliBuildArgs(prompt, systemAppend, streaming) {
+  const args = [
+    '-p', prompt,
+    '--output-format', streaming ? 'stream-json' : 'json',
+    '--tools', '',
+    '--effort', 'low',
+    '--no-session-persistence',
+  ]
+  if (streaming) args.push('--include-partial-messages')
+  if (systemAppend) args.push('--append-system-prompt', systemAppend)
+  return args
+}
+
+async function streamClaude(prompt, systemAppend, onDelta) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('claude', cliBuildArgs(prompt, systemAppend, true), {
+      cwd: PROJECT_ROOT,
+      env: cliBuildEnv()
+    })
+    let fullText = ''
+    child.stdout.on('data', chunk => {
+      for (const line of chunk.toString().split('\n')) {
+        if (!line.trim()) continue
+        try {
+          const ev = JSON.parse(line)
+          if (ev.type === 'stream_event') {
+            const e = ev.event
+            if (e?.type === 'content_block_delta' && e.delta?.type === 'text_delta') {
+              onDelta(e.delta.text)
+              fullText += e.delta.text
+            }
+          } else if (ev.type === 'result') {
+            fullText = ev.result || fullText
+          }
+        } catch {}
+      }
+    })
+    child.stderr.on('data', d => console.error('claude:', d.toString().trim()))
+    child.on('close', code => {
+      if (code !== 0 && !fullText) return reject(new Error(`claude exited ${code}`))
+      resolve(fullText)
+    })
   })
-  return res.content[0].text
+}
+
+// 一次性生成：日记评论/写信/留言/记忆提炼等
+async function askClaude(prompt, systemAppend) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('claude', cliBuildArgs(prompt, systemAppend, false), {
+      cwd: PROJECT_ROOT,
+      env: cliBuildEnv()
+    })
+    let out = ''
+    child.stdout.on('data', d => { out += d.toString() })
+    child.stderr.on('data', d => console.error('claude:', d.toString().trim()))
+    child.on('close', code => {
+      try { resolve(JSON.parse(out).result || out.trim()) }
+      catch { code !== 0 && !out.trim() ? reject(new Error(`claude exited ${code}`)) : resolve(out.trim()) }
+    })
+  })
 }
 
 // ── 聊天 ──

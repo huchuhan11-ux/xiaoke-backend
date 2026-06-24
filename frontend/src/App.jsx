@@ -664,7 +664,7 @@ function Home({ dark, setDark }) {
         {greeting ? <div className="hv2-greeting">{greeting}</div> : null}
       </div>
 
-      {/* 四格 bento：统计 + 天气 */}
+      {/* 四格 bento：统计 / 双城天气 / 倒计时 */}
       <div className="hv2-bento">
         <div className="hv2-bc">
           <div className="hv2-bc-lbl">在一起</div>
@@ -676,44 +676,50 @@ function Home({ dark, setDark }) {
           <div className="hv2-bc-num">{msgCount ?? '—'}</div>
           <div className="hv2-bc-unit">条</div>
         </div>
-        {weather.map(w => (
-          <div key={w.city} className="hv2-bc hv2-bc-wx">
-            <div className="hv2-bc-lbl">{w.city}</div>
-            <div className="hv2-bc-wx-row">
-              <span className="hv2-bc-wxicon">{weatherEmoji(w.code)}</span>
-              <span className="hv2-bc-temp">{w.temp}°</span>
-            </div>
-            <div className="hv2-bc-wxdesc">{w.desc}</div>
-            <div className="hv2-bc-wxsub">体感 {w.feelsLike}° · {w.humidity}%</div>
-          </div>
-        ))}
-      </div>
 
-      {/* 倒计时 */}
-      <div className="hv2-section">
-        <div className="hv2-section-label">倒计时</div>
-        <div className="cd-pills">
-          {items.map(item => {
-            const d = daysUntil(item.target_date)
-            return (
-              <div key={item.id} className="cd-pill">
-                <span className="cd-pill-title">{item.title}</span>
-                <span className="cd-pill-days">{d > 0 ? `${d}天` : d === 0 ? '今天' : `已过${Math.abs(d)}天`}</span>
-                <button className="cd-pill-del" onClick={() => remove(item.id)}>×</button>
+        {/* 左下：双城天气叠放 */}
+        <div className="hv2-bc hv2-bc-wx2">
+          {weather.length > 0 ? weather.map((w, i) => (
+            <div key={w.city} className={i > 0 ? 'hv2-wx2-sep' : ''}>
+              <div className="hv2-bc-lbl">{w.city}</div>
+              <div className="hv2-bc-wx-row">
+                <span className="hv2-bc-wxicon">{weatherEmoji(w.code)}</span>
+                <span className="hv2-bc-temp">{w.temp}°</span>
               </div>
-            )
-          })}
-          <button className="cd-pill cd-pill-add" onClick={() => setAdding(a => !a)}>{adding ? '×' : '+'}</button>
-        </div>
-        {adding && (
-          <div className="cd-form">
-            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="事件名称" className="home-input" />
-            <div className="cd-form-row">
-              <input type="date" value={date} onChange={e => setDate(e.target.value)} className="home-input" />
-              <button className="home-btn-confirm" onClick={add}>加</button>
+              <div className="hv2-bc-wxsub">{w.desc}</div>
             </div>
+          )) : <div className="hv2-bc-lbl" style={{ opacity: 0.4 }}>天气…</div>}
+        </div>
+
+        {/* 右下：倒计时 */}
+        <div className="hv2-bc hv2-bc-cd">
+          <div className="hv2-bc-cd-header">
+            <span className="hv2-bc-lbl">倒计时</span>
+            <button className="hv2-cd-add-btn" onClick={() => setAdding(a => !a)}>{adding ? '×' : '+'}</button>
           </div>
-        )}
+          <div className="hv2-cd-list">
+            {items.map(item => {
+              const d = daysUntil(item.target_date)
+              return (
+                <div key={item.id} className="hv2-cd-row">
+                  <span className="hv2-cd-title">{item.title}</span>
+                  <span className="hv2-cd-days">{d > 0 ? `${d}天` : d === 0 ? '今天' : `已${Math.abs(d)}天`}</span>
+                  <button className="hv2-cd-del" onClick={() => remove(item.id)}>×</button>
+                </div>
+              )
+            })}
+          </div>
+          {adding && (
+            <div className="hv2-cd-form">
+              <input value={title} onChange={e => setTitle(e.target.value)} placeholder="事件名称"
+                className="hv2-cd-input" autoFocus />
+              <div className="hv2-cd-frow">
+                <input type="date" value={date} onChange={e => setDate(e.target.value)} className="hv2-cd-input" />
+                <button className="hv2-cd-confirm" onClick={add}>加</button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* 戳一戳 */}
