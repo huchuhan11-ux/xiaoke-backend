@@ -223,10 +223,10 @@ body {
   color: #4a3728;
   font-family: 'Noto Serif SC', serif;
   font-weight: 300;
-  font-size: 13.5px;
-  line-height: 1.8;
+  font-size: 16px;
+  line-height: 1.7;
   resize: none;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
 }
 
 .inputwrap textarea::placeholder { color: rgba(139,115,85,0.45); }
@@ -974,9 +974,8 @@ button {
 }
 
 .hv2-top {
-  padding: 36px 24px 24px;
-  background: linear-gradient(160deg, rgba(192,139,114,0.08) 0%, transparent 60%);
-  border-bottom: 0.5px solid rgba(192,139,114,0.12);
+  padding: max(52px, env(safe-area-inset-top, 52px)) 24px 24px;
+  background: linear-gradient(160deg, rgba(192,139,114,0.12) 0%, transparent 70%);
 }
 
 .hv2-clock {
@@ -1008,8 +1007,9 @@ button {
 .hv2-bento {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  grid-auto-rows: 1fr;
   gap: 10px;
-  padding: 0 16px 16px;
+  padding: 16px 16px 16px;
 }
 
 .hv2-bc {
@@ -2500,6 +2500,23 @@ button.diary-mood-btn {
 .dark .style-option-name { color: #e8d5a3; }
 .dark .style-option-desc { color: #9a8a5a; }
 .dark .prefs-save-btn { background: #c9a227; color: #1a1710; }
+/* ── settings landing page ── */
+.settings-page {
+  flex: 1;
+  overflow-y: auto;
+  padding: max(52px, env(safe-area-inset-top, 52px)) 22px 40px;
+}
+
+.settings-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: #3a2a1e;
+  letter-spacing: -0.3px;
+  margin-bottom: 28px;
+}
+
+.dark .settings-title { color: #e8d5a3; }
+
 /* ── settings landing list ── */
 .settings-list {
   display: flex;

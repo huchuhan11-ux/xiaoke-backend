@@ -95,13 +95,26 @@ function Settings({ dark, setDark }) {
 
   const set = (key, val) => setPrefs(p => ({ ...p, [key]: val }))
 
+  const postConfig = (key, value) => {
+    fetch(`${API}/api/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, value })
+    }).catch(() => {})
+  }
+
   const save = () => {
     localStorage.setItem('prefs', JSON.stringify(prefs))
+    postConfig('prefs', prefs)
     setSaved(true)
     setTimeout(() => setSaved(false), 1500)
   }
 
-  const persistStyles = (next) => { setStyles(next); saveStyles(next) }
+  const persistStyles = (next) => {
+    setStyles(next)
+    saveStyles(next)
+    postConfig('styles', next)
+  }
 
   const addStyle = () => {
     if (!newLabel.trim()) return
@@ -998,6 +1011,13 @@ export default function App() {
     viewRef.current = view
     viewStartRef.current = now
   }, [view])
+
+  useEffect(() => {
+    fetch(`${API}/api/config`).then(r => r.json()).then(cfg => {
+      if (cfg.prefs) localStorage.setItem('prefs', JSON.stringify(cfg.prefs))
+      if (cfg.styles) localStorage.setItem('styleOptions', JSON.stringify(cfg.styles))
+    }).catch(() => {})
+  }, [])
 
   useEffect(() => {
     const tick = setInterval(() => {

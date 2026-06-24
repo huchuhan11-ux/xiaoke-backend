@@ -206,6 +206,7 @@ function cliBuildArgs(prompt, systemAppend, streaming, model) {
     '--effort', 'low',
     '--no-session-persistence',
   ]
+  if (streaming) args.push('--verbose')
   if (model && MODEL_MAP[model]) args.push('--model', MODEL_MAP[model])
   if (streaming) args.push('--include-partial-messages')
   if (systemAppend) args.push('--append-system-prompt', systemAppend)
@@ -592,6 +593,27 @@ app.get('/api/wakeup-audio', async (req, res) => {
 })
 
 refreshWakeupCache()
+
+// ── 用户配置（偏好/文风跨设备同步，需 user_config 表）──
+// SQL: create table user_config (key text primary key, value jsonb not null default '{}', updated_at timestamptz default now());
+app.get('/api/config', async (req, res) => {
+  try {
+    const { data, error } = await supabase.from('user_config').select('key, value')
+    if (error) return res.json({})
+    const cfg = {}
+    for (const row of (data || [])) cfg[row.key] = row.value
+    res.json(cfg)
+  } catch { res.json({}) }
+})
+
+app.post('/api/config', async (req, res) => {
+  const { key, value } = req.body
+  if (!key || value === undefined) return res.status(400).json({ error: 'missing key/value' })
+  try {
+    await supabase.from('user_config').upsert({ key, value, updated_at: new Date().toISOString() })
+    res.json({ ok: true })
+  } catch { res.json({ ok: false }) }
+})
 
 // ── 倒计时 ──
 app.get('/api/countdowns', async (req, res) => {
