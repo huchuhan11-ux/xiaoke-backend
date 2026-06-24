@@ -430,8 +430,15 @@ function Records() {
   const [mood, setMood] = useState('')
   const [posting, setPosting] = useState(false)
   const [generating, setGenerating] = useState(false)
-  const [activeSection, setActiveSection] = useState(null) // null | 'diary' | 'letter'
+  const [activeSection, setActiveSection] = useState(null) // null | 'diary' | 'letter' | 'memory'
   const [detailEntry, setDetailEntry] = useState(null)
+  const [memEntries, setMemEntries] = useState([])
+  const [memTitle, setMemTitle] = useState('')
+  const [memContent, setMemContent] = useState('')
+  const [memComposing, setMemComposing] = useState(false)
+  const [memSaving, setMemSaving] = useState(false)
+  const [memSummarizing, setMemSummarizing] = useState(false)
+  const [memMsg, setMemMsg] = useState('')
 
   const load = async () => {
     const [diary, letters] = await Promise.all([
@@ -445,7 +452,12 @@ function Records() {
     setEntries(all)
   }
 
-  useEffect(() => { load() }, [])
+  const loadMem = async () => {
+    const data = await fetch(`${API}/api/memories`).then(r => r.json()).catch(() => [])
+    setMemEntries(Array.isArray(data) ? data : [])
+  }
+
+  useEffect(() => { load(); loadMem() }, [])
 
   const ekey = e => `${e._type}-${e.id}`
 
@@ -502,6 +514,81 @@ function Records() {
         <div className="records-detail-wrap">
           <button className="records-back-btn" onClick={() => setDetailEntry(null)}>← 返回</button>
           <JournalCard entry={detailEntry} expanded={true} onToggle={() => {}} onReplySubmit={handleReplySubmit} />
+        </div>
+      </div>
+    )
+  }
+
+  // Memory section view
+  if (activeSection === 'memory') {
+    const saveMem = async () => {
+      if (!memTitle.trim() || memSaving) return
+      setMemSaving(true)
+      await fetch(`${API}/api/memories`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: memTitle, content: memContent })
+      }).catch(() => {})
+      setMemTitle(''); setMemContent(''); setMemComposing(false)
+      await loadMem()
+      setMemSaving(false)
+    }
+    const delMem = async (id) => {
+      await fetch(`${API}/api/memories/${id}`, { method: 'DELETE' }).catch(() => {})
+      setMemEntries(prev => prev.filter(m => m.id !== id))
+    }
+    const summarize = async () => {
+      if (memSummarizing) return
+      setMemSummarizing(true); setMemMsg('')
+      try {
+        const r = await fetch(`${API}/api/memories/summarize`, { method: 'POST' }).then(d => d.json())
+        setMemMsg(r.msg || '')
+        if (r.added > 0) await loadMem()
+      } catch { setMemMsg('出错了') }
+      setMemSummarizing(false)
+      setTimeout(() => setMemMsg(''), 3000)
+    }
+    const srcLabel = s => ({ user: '我写的', chat: '对话', diary: '日记', board: '留言' }[s] || s)
+    return (
+      <div className="journal" style={{ display: 'flex', flexDirection: 'column' }}>
+        <div className="records-detail-wrap" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <div className="records-section-nav">
+            <button className="records-back-btn" style={{ padding: '10px 0 0' }} onClick={() => setActiveSection(null)}>←</button>
+            <span className="records-nav-title">记忆库</span>
+            <button className="memory-summarize-btn" onClick={summarize} disabled={memSummarizing}>
+              {memSummarizing ? '总结中…' : '让小克总结'}
+            </button>
+          </div>
+          {memMsg && <div style={{ fontSize: '12px', color: '#a8765f', padding: '0 0 8px' }}>{memMsg}</div>}
+          <div className="memory-list" style={{ flex: 1, overflowY: 'auto' }}>
+            {memEntries.length === 0 && <div className="records-empty-sm">还没有记忆</div>}
+            {memEntries.map(m => (
+              <div key={m.id} className="memory-item">
+                <div className="memory-item-title">{m.title}</div>
+                {m.content && <div className="memory-item-content">{m.content}</div>}
+                <div className="memory-item-footer">
+                  <span className="memory-item-date">{fmtDate(m.created_at)}</span>
+                  <span className="memory-item-source">{srcLabel(m.source)}</span>
+                  <button className="memory-item-del" onClick={() => delMem(m.id)}>×</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="memory-compose-bar">
+          {memComposing ? (
+            <div className="memory-compose-inputs">
+              <input className="memory-compose-title" value={memTitle} onChange={e => setMemTitle(e.target.value)}
+                placeholder="标题（必填）" />
+              <textarea className="memory-compose-content" value={memContent} onChange={e => setMemContent(e.target.value)}
+                placeholder="内容（选填）" rows={2} />
+              <div className="memory-compose-btns">
+                <button className="memory-compose-cancel" onClick={() => { setMemComposing(false); setMemTitle(''); setMemContent('') }}>取消</button>
+                <button className="memory-compose-save" onClick={saveMem} disabled={memSaving}>{memSaving ? '保存中…' : '记下'}</button>
+              </div>
+            </div>
+          ) : (
+            <button className="memory-add-ph" onClick={() => setMemComposing(true)}>写下一条记忆…</button>
+          )}
         </div>
       </div>
     )
@@ -583,6 +670,11 @@ function Records() {
           <div className="records-home-icon">✉</div>
           <div className="records-home-name">信</div>
           <div className="records-home-sub">{letterEntries.length > 0 ? `${letterEntries.length} 封` : '还没有信'}</div>
+        </div>
+        <div className="records-home-card" onClick={() => setActiveSection('memory')}>
+          <div className="records-home-icon">✨</div>
+          <div className="records-home-name">记忆库</div>
+          <div className="records-home-sub">{memEntries.length > 0 ? `${memEntries.length} 条` : '还没有记忆'}</div>
         </div>
       </div>
     </div>
@@ -1213,6 +1305,7 @@ export default function App() {
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let aiMsg = { id: Date.now(), role: 'assistant', content: '' }
+      let rawContent = ''
       setMessages(prev => [...prev, aiMsg])
       let buffer = ''
       while (true) {
@@ -1228,12 +1321,20 @@ export default function App() {
               if (payload.trace) {
                 aiMsg = { ...aiMsg, trace: payload.trace }
               } else {
-                aiMsg = { ...aiMsg, content: aiMsg.content + payload.text }
+                rawContent += payload.text
+                aiMsg = { ...aiMsg, content: rawContent.replace(/\[MSG\]/g, '') }
               }
               setMessages(prev => prev.map(m => m.id === aiMsg.id ? aiMsg : m))
             } catch {}
           }
         }
+      }
+      // split [MSG] into multiple bubbles
+      const msgParts = rawContent.split('[MSG]').map(p => p.trim()).filter(Boolean)
+      if (msgParts.length > 1) {
+        const ts = Date.now()
+        const multi = msgParts.map((p, i) => ({ id: ts + i, role: 'assistant', content: p, trace: i === 0 ? aiMsg.trace : undefined }))
+        setMessages(prev => [...prev.filter(m => m.id !== aiMsg.id), ...multi])
       }
     } catch {
       setMessages(prev => [...prev, { id: Date.now(), role: 'assistant', content: '出错了，待会儿再试。' }])
@@ -1373,8 +1474,9 @@ export default function App() {
               )}
               <div className="inputwrap">
                 <button className="inputwrap-attach" onClick={() => fileInputRef.current?.click()} title="附件">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                    <line x1="12" y1="5" x2="12" y2="19"/>
+                    <line x1="5" y1="12" x2="19" y2="12"/>
                   </svg>
                 </button>
                 <input ref={fileInputRef} type="file" accept="image/*,application/pdf,.txt,.doc,.docx" style={{ display: 'none' }} onChange={handleFileAttach} />

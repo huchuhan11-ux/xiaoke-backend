@@ -117,6 +117,8 @@ const TRACE_INSTRUCTION = `
 
 在正式回复之前，先输出一段"过程记录"，格式：<trace>条目1|条目2</trace>，2到4条，每条不超过18字，第一人称口语，像脑子里飘过的念头（例如"周六中午12:28，居然才刚醒"），不是日志体；如果这条回复其实不用查什么，写1条很简短的就行，别硬凑。写完 </trace> 换行，紧接着写正式回复正文，正文里不要重复过程记录已经说过的内容。
 
+如果感觉自然，可以用 [MSG] 把回复切成2-3条分开发出去，界面会分开显示，就像真人发消息那样拆开。不强求，只在真的适合拆的时候用。比如先发"嗯"再发完整的话，或者先说情绪再说内容。
+
 `
 
 function extractTrace(fullText) {
@@ -728,6 +730,59 @@ app.delete('/api/wishes/:id', async (req, res) => {
     .from('wishes').delete().eq('id', req.params.id)
   if (error) return res.status(500).json({ error: error.message })
   res.json({ ok: true })
+})
+
+// ── 用户记忆库（与 AI 记忆共用 memories 表） ──
+app.get('/api/memories', async (req, res) => {
+  const { data, error } = await supabase.from('memories')
+    .select('*').order('created_at', { ascending: false })
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data || [])
+})
+
+app.post('/api/memories', async (req, res) => {
+  const { title, content } = req.body
+  if (!title?.trim()) return res.status(400).json({ error: 'title required' })
+  const { data, error } = await supabase.from('memories').insert({
+    title: title.trim(), content: content?.trim() || '', source: 'user'
+  }).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  await fetchMemory()
+  res.json(data)
+})
+
+app.delete('/api/memories/:id', async (req, res) => {
+  const { error } = await supabase.from('memories').delete().eq('id', parseInt(req.params.id))
+  if (error) return res.status(500).json({ error: error.message })
+  await fetchMemory()
+  res.json({ ok: true })
+})
+
+app.post('/api/memories/summarize', async (req, res) => {
+  try {
+    const { data: recent } = await supabase.from('messages')
+      .select('role, content').eq('session_id', 'default')
+      .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+      .order('created_at', { ascending: true }).limit(80)
+    if (!recent || recent.length < 4) return res.json({ added: 0, msg: '最近聊天太少，没有足够内容' })
+    const transcript = recent.map(m => `${m.role === 'user' ? '小好' : '小克'}：${m.content}`).join('\n')
+    const raw = await askClaude(
+      `${transcript}\n\n从以上对话中，提炼出最多3条最值得长期记住的内容（重要的约定、值得记住的瞬间、规律、梗）。如果没有特别值得记的就少提炼甚至不提炼。只输出JSON数组，不要markdown代码块，不要多余解释：[{"title":"简短标题不超过15字","content":"记忆内容第一人称不超过50字"},...]`,
+      memoryCache
+    )
+    const clean = raw.trim().replace(/```json|```/g, '').trim()
+    const items = JSON.parse(clean)
+    let added = 0
+    for (const item of (Array.isArray(items) ? items : [])) {
+      if (!item.title) continue
+      const { error } = await supabase.from('memories').insert({ title: item.title, content: item.content || '', source: 'chat' })
+      if (!error) added++
+    }
+    if (added) await fetchMemory()
+    res.json({ added, msg: added ? `添加了 ${added} 条记忆` : '最近没有特别值得记的内容' })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
 })
 
 // ── Monitor：使用时长统计 + 健康数据，对应的表可能还没建（需手动迁移），读写都做降级 ──
