@@ -91,6 +91,9 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
   const [locStatus, setLocStatus] = useState(() => localStorage.getItem('locEnabled') === '1' ? 'granted' : null)
   const [locInput, setLocInput] = useState(() => localStorage.getItem('locText') || '')
   const [locSaved, setLocSaved] = useState(false)
+  const [locGpsErr, setLocGpsErr] = useState(false)
+  const [sleepInput, setSleepInput] = useState('')
+  const [sleepSaved, setSleepSaved] = useState(false)
   const [calForm, setCalForm] = useState(null)
   const [remForm, setRemForm] = useState(null)
 
@@ -212,8 +215,9 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
       setLocSaved(true); setTimeout(() => setLocSaved(false), 1500)
     }
     const detectGPS = () => {
-      if (!navigator.geolocation) return
+      if (!navigator.geolocation) { setLocGpsErr(true); return }
       navigator.geolocation.getCurrentPosition(async pos => {
+        setLocGpsErr(false)
         const { latitude: lat, longitude: lng } = pos.coords
         try {
           const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=zh`)
@@ -221,14 +225,21 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
           const addr = d.address
           const city = addr.city || addr.town || addr.county || addr.state || ''
           const district = addr.suburb || addr.district || ''
-          const text = [city, district].filter(Boolean).join(' ')
-          setLocInput(text)
-          saveLocation(text)
+          const text = [city, district].filter(Boolean).join(' ') || `${lat.toFixed(3)},${lng.toFixed(3)}`
+          setLocInput(text); saveLocation(text)
         } catch {
           const text = `${lat.toFixed(3)},${lng.toFixed(3)}`
           setLocInput(text); saveLocation(text)
         }
-      }, () => {})
+      }, () => { setLocGpsErr(true) })
+    }
+    const saveSleep = () => {
+      const h = parseFloat(sleepInput)
+      if (isNaN(h) || h <= 0 || h > 24) return
+      const today = new Date().toLocaleDateString('en-CA')
+      fetch(`${API}/api/health`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: today, sleep_hours: h }) }).catch(() => {})
+      setSleepSaved(true); setTimeout(() => setSleepSaved(false), 1500)
     }
     const openICS = (url) => { window.location.href = url }
     const createCalEvent = () => {
@@ -253,9 +264,16 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
             <span className="conn-icon">❤️</span>
             <div className="conn-info">
               <div className="conn-label">健康 <span className="conn-desc">iPhone 健康数据</span></div>
-              <div className="conn-note">睡眠 · 心率 · 步数 · 周期</div>
+              <div className="conn-note">心率 · 步数 · 周期（自动）</div>
+              <div className="conn-form" style={{ marginTop: 6, padding: 0, background: 'none' }}>
+                <div className="conn-form-row">
+                  <input className="conn-input" type="number" placeholder="今日睡眠小时数" min="0" max="24" step="0.5"
+                    value={sleepInput} onChange={e => setSleepInput(e.target.value)} />
+                  <button className="conn-badge todo" style={{ flexShrink: 0 }} onClick={saveSleep}>记录</button>
+                </div>
+                {sleepSaved && <span style={{ fontSize: 11, color: '#7ec8a0', marginTop: 2 }}>已保存</span>}
+              </div>
             </div>
-            <span className="conn-badge active">已连接</span>
           </div>
           {/* 位置 */}
           <div className={`conn-row ${locEnabled ? 'active' : 'todo'}`}>
@@ -270,6 +288,7 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
                   <button className="conn-badge todo" style={{ flexShrink: 0 }} onClick={detectGPS}>定位</button>
                 </div>
                 {locSaved && <span style={{ fontSize: 11, color: '#7ec8a0', marginTop: 2 }}>已保存</span>}
+                {locGpsErr && <span style={{ fontSize: 11, color: '#c08b72', marginTop: 2 }}>GPS不可用，请手动输入</span>}
               </div>
             </div>
           </div>
@@ -1306,7 +1325,6 @@ export default function App() {
   const [messages, setMessages] = useState(INIT)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [thinkDone, setThinkDone] = useState(null)
   const [pendingActions, setPendingActions] = useState([])
   const thinkStartRef = useRef(null)
   const lastChatActivityRef = useRef(Date.now())
@@ -1596,29 +1614,28 @@ export default function App() {
                 setPendingActions(payload.actions)
               } else {
                 rawContent += payload.text
-                aiMsg = { ...aiMsg, content: rawContent.replace(/\[MSG\]/g, '').replace(/^\s+/, '') }
+                aiMsg = { ...aiMsg, content: rawContent.replace(/\[MSG?\]|\[M[A-Z]*G\]/g, '').replace(/^\s+/, '') }
               }
               setMessages(prev => prev.map(m => m.id === aiMsg.id ? aiMsg : m))
             } catch {}
           }
         }
       }
-      // split [MSG] into multiple bubbles
-      const msgParts = rawContent.split('[MSG]').map(p => p.trim()).filter(Boolean)
+      // split [MSG] into multiple bubbles — also handle [MG] model typos
+      const MSG_RE = /\[MSG?\]|\[M[A-Z]*G\]/g
+      const msgParts = rawContent.split(MSG_RE).map(p => p.trim()).filter(Boolean)
+      const secs = thinkStartRef.current ? Math.round((Date.now() - thinkStartRef.current) / 1000) : null
       if (msgParts.length > 1) {
         const ts = Date.now()
-        const multi = msgParts.map((p, i) => ({ id: ts + i, role: 'assistant', content: p, trace: i === 0 ? aiMsg.trace : undefined }))
+        const multi = msgParts.map((p, i) => ({ id: ts + i, role: 'assistant', content: p, trace: i === 0 ? aiMsg.trace : undefined, thinkSecs: i === 0 && secs != null ? secs : undefined }))
         setMessages(prev => [...prev.filter(m => m.id !== aiMsg.id), ...multi])
+      } else if (secs != null) {
+        setMessages(prev => prev.map(m => m.id === aiMsg.id ? { ...m, thinkSecs: secs } : m))
       }
     } catch {
       setMessages(prev => [...prev, { id: Date.now(), role: 'assistant', content: '出错了，待会儿再试。' }])
     } finally {
-      const secs = thinkStartRef.current ? Math.round((Date.now() - thinkStartRef.current) / 1000) : null
       setLoading(false)
-      if (secs != null) {
-        setThinkDone(secs)
-        setTimeout(() => setThinkDone(null), 5000)
-      }
       loadSessions()
     }
   }
@@ -1676,14 +1693,14 @@ export default function App() {
                   {m.role === 'assistant' && m.trace && m.trace.length > 0 && (
                     <button className="trace-btn" onClick={() => setTraceModal(m.trace)}>
                       <span className="trace-btn-icon">✦</span>
-                      <span>Thinking...</span>
+                      <span>{m.thinkSecs != null ? `Thought for ${m.thinkSecs}s` : 'Thought process'}</span>
                     </button>
                   )}
                   <div className={`msg ${m.role}`}>
                     <div className={`bubble ${bgImage ? 'bubble-bg' : ''}`}>
                       {m.attachment?.isImage && <img className="msg-img" src={m.attachment.data} alt={m.attachment.name} />}
                       {m.attachment && !m.attachment.isImage && <div className="msg-file-chip">📎 {m.attachment.name}</div>}
-                      {m.content && !m.content.startsWith('[图片:') && !m.content.startsWith('[文件:') ? m.content.replace(/\[MSG\]/g, '') : (!m.attachment ? m.content : null)}
+                      {m.content && !m.content.startsWith('[图片:') && !m.content.startsWith('[文件:') ? m.content.replace(/\[MSG?\]|\[M[A-Z]*G\]/g, '') : (!m.attachment ? m.content : null)}
                     </div>
                   </div>
                   {m.id !== 1 && (
@@ -1756,12 +1773,6 @@ export default function App() {
                     <span className="thinking-text">Thinking</span>
                     <span className="thinking-dot" /><span className="thinking-dot" /><span className="thinking-dot" />
                   </div>
-                </div>
-              )}
-              {!loading && thinkDone != null && (
-                <div className="thinking-done-row">
-                  <span className="thinking-done-icon">✦</span>
-                  <span>Thought for {thinkDone}s</span>
                 </div>
               )}
               <div ref={bottomRef} />

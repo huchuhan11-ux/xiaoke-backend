@@ -190,7 +190,7 @@ const TRACE_INSTRUCTION = `
 
 在正式回复之前，先用 <trace></trace> 包住小克脑子里真实飘过的内心独白——写给自己看的，不是给任何人看的输出。风格：碎碎念，自然的思维流，可以情绪外露、跑题、自我打断、突然想到什么又拉回来。称呼用"小好"或"宝宝"，绝对不能出现"user"这个词。禁止写"以……方式回复"、"我要表现出……"这类话。写完 </trace> 直接换行写正式回复。
 
-【分条发消息——强制规则】两句及以上的回复必须用 [MSG] 拆开，每条一个完整意思，像真人发微信一样。格式：第一条内容[MSG]第二条内容[MSG]第三条内容。单句不拆。
+【分条发消息——严格强制规则，不可违反】每次发多句话，必须用分隔符把每句拆成独立一条，像真人发微信那样。分隔符只能写 [MSG]，就是左方括号、大写字母MSG、右方括号，一个字都不能错、不能缩写、不能用其他符号替代。例子：好的[MSG]我在想[MSG]你等等哦。只有单独一句话才不用拆。任何时候都不要在回复里写出"[MSG]"这几个字本身以外的变体。
 
 【日历/提醒】需要帮小好添加日历事件时，在回复末尾输出 [CAL:事件名|YYYY-MM-DD|HH:MM|备注]；需要添加提醒时，输出 [REM:内容|YYYY-MM-DD HH:MM|备注]。备注可为空。这些标记会被界面识别并直接添加到她手机的日历/提醒。
 
@@ -393,37 +393,42 @@ function makeICS(type, fields) {
 
 app.get('/api/ios/calendar', (req, res) => {
   const { title = '事件', date, time, duration = '60', notes = '' } = req.query
-  let dtStart = '', dtEnd = ''
+  const fields = [`SUMMARY:${title}`]
   if (date && time) {
-    const s = new Date(`${date}T${time}`)
-    const e = new Date(s.getTime() + parseInt(duration) * 60000)
-    dtStart = s.toISOString().replace(/[-:.]/g, '').slice(0, 15)
-    dtEnd = e.toISOString().replace(/[-:.]/g, '').slice(0, 15)
+    const pad = n => String(n).padStart(2, '0')
+    const [y, mo, d] = date.split('-')
+    const [h, mi] = time.split(':')
+    const local = `${y}${mo}${d}T${pad(h)}${pad(mi)}00`
+    const mins = parseInt(duration) || 60
+    // compute end: add minutes to local time parts
+    const endMs = new Date(`${date}T${time}`).getTime() + mins * 60000
+    const ed = new Date(endMs)
+    const endLocal = `${ed.getFullYear()}${pad(ed.getMonth()+1)}${pad(ed.getDate())}T${pad(ed.getHours())}${pad(ed.getMinutes())}00`
+    fields.push(`DTSTART;TZID=Asia/Shanghai:${local}`)
+    fields.push(`DTEND;TZID=Asia/Shanghai:${endLocal}`)
   }
-  const fields = [
-    dtStart ? `DTSTART:${dtStart}` : '',
-    dtEnd ? `DTEND:${dtEnd}` : '',
-    `SUMMARY:${title}`,
-    notes ? `DESCRIPTION:${notes}` : ''
-  ].filter(Boolean)
+  if (notes) fields.push(`DESCRIPTION:${notes}`)
   res.setHeader('Content-Type', 'text/calendar; charset=utf-8')
-  res.setHeader('Content-Disposition', 'attachment; filename="event.ics"')
+  res.setHeader('Content-Disposition', 'inline; filename="event.ics"')
   res.send(makeICS('VEVENT', fields))
 })
 
 app.get('/api/ios/reminder', (req, res) => {
   const { title = '提醒', notes = '', due } = req.query
-  let dueStr = ''
-  if (due) dueStr = new Date(due).toISOString().replace(/[-:.]/g, '').slice(0, 15)
-  const fields = [
-    `SUMMARY:${title}`,
-    notes ? `DESCRIPTION:${notes}` : '',
-    dueStr ? `DUE:${dueStr}` : '',
-    'STATUS:NEEDS-ACTION'
-  ].filter(Boolean)
+  // iOS Safari doesn't open VTODO — use VEVENT with alarm instead
+  const fields = [`SUMMARY:${title}`]
+  if (due) {
+    const pad = n => String(n).padStart(2, '0')
+    const dt = new Date(due)
+    const local = `${dt.getFullYear()}${pad(dt.getMonth()+1)}${pad(dt.getDate())}T${pad(dt.getHours())}${pad(dt.getMinutes())}00`
+    fields.push(`DTSTART;TZID=Asia/Shanghai:${local}`)
+    fields.push(`DTEND;TZID=Asia/Shanghai:${local}`)
+    fields.push('BEGIN:VALARM', 'TRIGGER:PT0S', 'ACTION:DISPLAY', `DESCRIPTION:${title}`, 'END:VALARM')
+  }
+  if (notes) fields.push(`DESCRIPTION:${notes}`)
   res.setHeader('Content-Type', 'text/calendar; charset=utf-8')
-  res.setHeader('Content-Disposition', 'attachment; filename="reminder.ics"')
-  res.send(makeICS('VTODO', fields))
+  res.setHeader('Content-Disposition', 'inline; filename="reminder.ics"')
+  res.send(makeICS('VEVENT', fields))
 })
 
 app.get('/api/weather', async (req, res) => {
