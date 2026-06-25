@@ -1218,6 +1218,8 @@ export default function App() {
   const [messages, setMessages] = useState(INIT)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [thinkDone, setThinkDone] = useState(null)
+  const thinkStartRef = useRef(null)
   const [bgImage, setBgImage] = useState(() => localStorage.getItem('chatBg') || '')
   const [openTraces, setOpenTraces] = useState(() => new Set())
   const [traceModal, setTraceModal] = useState(null)
@@ -1364,7 +1366,7 @@ export default function App() {
               const base = Number(m.id)
               return parts.map((p, i) => ({ id: base + i, role: m.role, content: p, trace: i === 0 ? (m.trace || null) : undefined, ts: m.created_at ? new Date(m.created_at).getTime() : null }))
             }
-            return [{ id: m.id, role: m.role, content: m.content, trace: m.trace || null, ts: m.created_at ? new Date(m.created_at).getTime() : null }]
+            return [{ id: m.id, role: m.role, content: parts[0] ?? m.content, trace: m.trace || null, ts: m.created_at ? new Date(m.created_at).getTime() : null }]
           })
           setMessages([...INIT, ...loaded])
         } else {
@@ -1442,6 +1444,8 @@ export default function App() {
     setInput('')
     setAttachment(null)
     setLoading(true)
+    setThinkDone(null)
+    thinkStartRef.current = Date.now()
     const history = [...base, userMsg]
       .filter(m => m.role === 'user' || m.role === 'assistant')
       .map(m => ({ role: m.role, content: m.content }))
@@ -1495,7 +1499,12 @@ export default function App() {
     } catch {
       setMessages(prev => [...prev, { id: Date.now(), role: 'assistant', content: '出错了，待会儿再试。' }])
     } finally {
+      const secs = thinkStartRef.current ? Math.round((Date.now() - thinkStartRef.current) / 1000) : null
       setLoading(false)
+      if (secs != null) {
+        setThinkDone(secs)
+        setTimeout(() => setThinkDone(null), 5000)
+      }
       loadSessions()
     }
   }
@@ -1600,9 +1609,15 @@ export default function App() {
                 <div className="msg-group">
                   <div className="thinking-card">
                     <span className="thinking-icon">✦</span>
-                    <span className="thinking-text">思考中</span>
+                    <span className="thinking-text">Thinking...</span>
                     <span className="thinking-dot" /><span className="thinking-dot" /><span className="thinking-dot" />
                   </div>
+                </div>
+              )}
+              {!loading && thinkDone != null && (
+                <div className="thinking-done-row">
+                  <span className="thinking-done-icon">✦</span>
+                  <span>Thought for {thinkDone}s</span>
                 </div>
               )}
               <div ref={bottomRef} />

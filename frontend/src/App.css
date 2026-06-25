@@ -109,7 +109,7 @@ html {
   background: #faf6f0;
   border-radius: 20px 20px 0 0;
   width: 100%;
-  max-height: 65vh;
+  max-height: 82vh;
   padding: 20px 20px calc(env(safe-area-inset-bottom, 0px) + 24px);
   display: flex;
   flex-direction: column;
@@ -163,6 +163,19 @@ html {
 .dark .trace-modal-title { color: #c9a227; }
 .dark .trace-modal-body { color: #c8b89a; }
 .dark .trace-modal-close { background: rgba(201,162,39,0.1); color: #c9a227; }
+
+.thinking-done-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #b89060;
+  opacity: 0.75;
+  padding: 4px 6px;
+  animation: fadeIn 0.3s ease;
+}
+.thinking-done-icon { font-size: 10px; opacity: 0.7; }
+.dark .thinking-done-row { color: #c9a227; }
 
 .bubble {
   padding: 13px 17px;
