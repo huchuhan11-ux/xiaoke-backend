@@ -376,9 +376,9 @@ async function streamClaude(prompt, systemAppend, onDelta, model) {
 }
 
 // 一次性生成：日记评论/写信/留言/记忆提炼等
-async function askClaude(prompt, systemAppend) {
+async function askClaude(prompt, systemAppend, model = 'sonnet') {
   return new Promise((resolve, reject) => {
-    const child = spawn('claude', cliBuildArgs(prompt, systemAppend, false), {
+    const child = spawn('claude', cliBuildArgs(prompt, systemAppend, false, model), {
       cwd: PROJECT_ROOT,
       env: cliBuildEnv(),
       stdio: ['ignore', 'pipe', 'pipe']
@@ -565,12 +565,13 @@ app.post('/api/chat', async (req, res) => {
     if (actions.length) {
       res.write(`data: ${JSON.stringify({ actions })}\n\n`)
       for (const a of actions) {
-        await supabase.from('pending_actions').insert({ type: a.type, payload: a }).catch(() => {})
+        supabase.from('pending_actions').insert({ type: a.type, payload: a }).catch(() => {})
       }
     }
-    await insertMessageSafe({ session_id, role: 'assistant', content: body, trace })
+    // 先关流，再存库，不让 Supabase 阻塞用户看到回复
     res.write('data: [DONE]\n\n')
     res.end()
+    insertMessageSafe({ session_id, role: 'assistant', content: body, trace })
   } catch (e) {
     console.log('CLAUDE CHAT ERROR:', e.message)
     res.write(`data: ${JSON.stringify({ text: '出错了，待会儿再试。' })}\n\n`)

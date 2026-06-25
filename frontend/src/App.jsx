@@ -1001,7 +1001,7 @@ function Home({ dark, setDark, setTraceModal }) {
   const [adding, setAdding] = useState(false)
   const [title, setTitle] = useState('')
   const [date, setDate] = useState('')
-  const [pokeMsg, setPokeMsg] = useState('')
+  const [pokeParts, setPokeParts] = useState([])
   const [pokeShow, setPokeShow] = useState(false)
   const [pokeTrace, setPokeTrace] = useState(null)
   const [pokeTraceOpen, setPokeTraceOpen] = useState(false)
@@ -1054,7 +1054,9 @@ function Home({ dark, setDark, setTraceModal }) {
     try {
       const res = await fetch(`${API}/api/poke`)
       const data = await res.json()
-      setPokeMsg(data.message)
+      const MSG_RE = /\[MSG?\]|\[M[A-Z]*G\]/g
+      const parts = (data.message || '').split(MSG_RE).map(p => p.trim()).filter(Boolean)
+      setPokeParts(parts.length ? parts : ['想你了'])
       setPokeTrace(data.trace || null)
       setPokeTraceOpen(false)
       setPokeShow(true)
@@ -1258,7 +1260,9 @@ function Home({ dark, setDark, setTraceModal }) {
             <span>Thought process</span>
           </button>
         )}
-        {pokeShow && <div className="home-poke-msg">{pokeMsg}</div>}
+        {pokeShow && pokeParts.map((p, i) => (
+          <div key={i} className="home-poke-msg">{p}</div>
+        ))}
       </div>
 
       {/* 许愿清单 */}
