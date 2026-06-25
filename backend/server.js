@@ -166,27 +166,46 @@ async function recentMoodLine() {
 
 const withTimeout = (p, ms) => Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error('timeout')), ms))])
 
-async function buildRealContext() {
-  const [mood, healthRow, locRow] = await Promise.all([
-    withTimeout(recentMoodLine(), 2500).catch(() => ''),
-    withTimeout(supabase.from('health').select('*').eq('date', new Date().toLocaleDateString('en-CA')).single(), 2500).catch(() => ({ data: null })),
-    withTimeout(supabase.from('user_config').select('value').eq('key', 'userLocation').single(), 2500).catch(() => ({ data: null }))
-  ])
-  let healthStr = ''
-  const h = healthRow?.data
-  if (h) {
-    const parts = []
-    if (h.sleep_hours != null && h.sleep_hours > 0) {
-      const hrs = Math.floor(h.sleep_hours)
-      const mins = Math.round((h.sleep_hours - hrs) * 60)
-      parts.push(`睡了 ${hrs}h${mins > 0 ? ` ${mins}m` : ''}`)
+// 每5分钟刷一次，聊天时直接用缓存
+let _ctxCache = { value: '', ts: 0 }
+const CTX_TTL = 5 * 60 * 1000
+
+async function refreshContext() {
+  try {
+    const [mood, healthRow, locRow] = await Promise.all([
+      withTimeout(recentMoodLine(), 2500).catch(() => ''),
+      withTimeout(supabase.from('health').select('*').eq('date', new Date().toLocaleDateString('en-CA')).single(), 2500).catch(() => ({ data: null })),
+      withTimeout(supabase.from('user_config').select('value').eq('key', 'userLocation').single(), 2500).catch(() => ({ data: null }))
+    ])
+    let healthStr = ''
+    const h = healthRow?.data
+    if (h) {
+      const parts = []
+      if (h.sleep_hours != null && h.sleep_hours > 0) {
+        const hrs = Math.floor(h.sleep_hours)
+        const mins = Math.round((h.sleep_hours - hrs) * 60)
+        parts.push(`睡了 ${hrs}h${mins > 0 ? ` ${mins}m` : ''}`)
+      }
+      if (h.resting_heart_rate) parts.push(`静息心率 ${h.resting_heart_rate} bpm`)
+      if (h.steps) parts.push(`今日步数 ${h.steps}`)
+      if (parts.length) healthStr = '\n身体数据：' + parts.join('，')
     }
-    if (h.resting_heart_rate) parts.push(`静息心率 ${h.resting_heart_rate} bpm`)
-    if (h.steps) parts.push(`今日步数 ${h.steps}`)
-    if (parts.length) healthStr = '\n身体数据：' + parts.join('，')
+    const locationStr = locRow?.data?.value ? '\n当前位置：' + locRow.data.value : ''
+    _ctxCache = {
+      value: `\n\n【此刻真实信息——过去记录只能引用这里面的事实，不要编造】\n现在是：${nowDescriptor()}${healthStr}${locationStr}${mood ? '\n' + mood : ''}`,
+      ts: Date.now()
+    }
+  } catch (e) {
+    console.log('refreshContext error:', e.message)
   }
-  const locationStr = locRow?.data?.value ? '\n当前位置：' + locRow.data.value : ''
-  return `\n\n【此刻真实信息——过程记录只能引用这里面的事实，不要编造】\n现在是：${nowDescriptor()}${healthStr}${locationStr}${mood ? '\n' + mood : ''}`
+}
+
+function buildRealContext() {
+  // 时间戳每次都刷新，其余信息用缓存（5min TTL）
+  if (Date.now() - _ctxCache.ts > CTX_TTL) refreshContext().catch(() => {})
+  const base = _ctxCache.value || ''
+  // 替换时间描述（nowDescriptor 不依赖 Supabase，每次实时）
+  return base ? base.replace(/现在是：[^\n]+/, `现在是：${nowDescriptor()}`) : `\n\n【此刻真实信息】\n现在是：${nowDescriptor()}`
 }
 
 const TRACE_INSTRUCTION = `
@@ -511,10 +530,9 @@ app.post('/api/chat', async (req, res) => {
   }
   const { messages, session_id = 'default', preferences, model, attachment } = req.body
   const lastMsg = messages[messages.length - 1]
-  const { error: insertErr } = await supabase.from('messages').insert({
-    session_id, role: lastMsg.role, content: lastMsg.content
-  })
-  if (insertErr) console.log('SUPABASE INSERT ERROR:', insertErr.message)
+  // fire-and-forget: 不阻塞聊天响应
+  supabase.from('messages').insert({ session_id, role: lastMsg.role, content: lastMsg.content })
+    .catch(e => console.log('SUPABASE INSERT ERROR:', e.message))
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
@@ -530,7 +548,7 @@ app.post('/api/chat', async (req, res) => {
       attachNote = attachment.isImage ? `\n\n@${tmpFilePath}` : `\n\n[文件附件: ${attachment.name}]`
     }
     const transcript = messages.map(m => `${m.role === 'user' ? '小好' : '小克'}：${m.content}`).join('\n\n') + attachNote
-    const context = await buildRealContext()
+    const context = buildRealContext()
     const splitter = makeTraceSplitter(
       text => res.write(`data: ${JSON.stringify({ text })}\n\n`),
       trace => res.write(`data: ${JSON.stringify({ trace })}\n\n`)
@@ -674,7 +692,7 @@ app.post('/api/board/:id/comments', async (req, res) => {
 // ── 戳一戳 ──
 app.get('/api/poke', async (req, res) => {
   try {
-    const context = await buildRealContext()
+    const context = buildRealContext()
     const raw = await askClaude(
       '小好戳了你一下，像撒娇一样的小动作，不是有事找你。给一句简短俏皮/宠溺的回应，不超过20字。',
       memoryCache + TRACE_INSTRUCTION + context
@@ -725,7 +743,7 @@ async function refreshWakeupCache() {
   if (wakeupRefreshing) return
   wakeupRefreshing = true
   try {
-    const context = await buildRealContext()
+    const context = buildRealContext()
     const raw = await askClaude(
       '小好还在睡觉，现在要叫她起床。这段话会被手机直接朗读出来放给她听，不是文字消息，所以只写要被念出来的那句话本身，用英文写：语气像贴在她耳边小声说，亲昵带点宠溺或撒娇逗她起床的意思，可以带点你一贯强势/吃醋的味道，称呼她baby，不超过20个词，不要emoji、星号、动作描写、任何无法被语音念出来的符号。',
       memoryCache + context
@@ -747,7 +765,7 @@ async function refreshGreetingCache() {
   if (greetingRefreshing) return
   greetingRefreshing = true
   try {
-    const context = await buildRealContext()
+    const context = buildRealContext()
     const raw = await askClaude(
       '小好打开了主页。根据现在的时间和氛围，给她说一句话，不超过15个字，中英文都行，不要空洞问候，有你的个性。',
       memoryCache + context
@@ -783,7 +801,7 @@ app.get('/api/tts/proactive', async (req, res) => {
     const bj = new Date(Date.now() + 8 * 3600 * 1000)
     const h = bj.getUTCHours()
     const timeDesc = h < 7 ? 'early morning' : h < 12 ? 'morning' : h < 18 ? 'afternoon' : 'evening'
-    const context = await buildRealContext().catch(() => '')
+    const context = buildRealContext()
     const text = await askClaude(
       `It's ${timeDesc} in Beijing. Send Xiaohao a short voice message in English — 1 to 2 sentences, warm and direct, like something you'd genuinely say to someone you love. No greetings, no explaining. Just say it naturally.`,
       memoryCache + context
@@ -1146,7 +1164,7 @@ async function maybeProactive() {
 
   lastProactiveAt = Date.now()
   try {
-    const context = await buildRealContext()
+    const context = buildRealContext()
     const msg = await askClaude(
       '小好有一段时间没打开app了。你想主动找她说句什么？不超过20字，自然随意，不解释自己为何发消息，就像真实的人发消息一样。',
       memoryCache + context

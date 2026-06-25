@@ -3919,6 +3919,63 @@ button.diary-mood-btn {
 .dark .su-plan-bar { background: rgba(201,162,39,0.08); }
 .dark .su-plan-meta { color: #7a6a5a; }
 
+/* ── location connector (column layout, contained) ── */
+.conn-row-loc {
+  padding: 14px;
+  background: rgba(192,139,114,0.06);
+  border: 0.5px solid rgba(192,139,114,0.15);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  box-sizing: border-box;
+  width: 100%;
+  overflow: hidden;
+}
+.conn-row-loc.active { border-color: rgba(126,200,160,0.35); background: rgba(126,200,160,0.06); }
+.conn-row-loc-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.conn-row-loc-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-left: 36px;
+  box-sizing: border-box;
+  width: 100%;
+}
+.conn-loc-input {
+  flex: 1 1 80px;
+  min-width: 0;
+}
+.conn-loc-gps {
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  background: rgba(192,139,114,0.12);
+  color: #a8765f;
+  border: 0.5px solid rgba(192,139,114,0.25);
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.conn-loc-hint {
+  display: block;
+  width: 100%;
+  font-size: 11px;
+  margin-top: 0;
+}
+.conn-loc-hint.ok { color: #7ec8a0; }
+.conn-loc-hint.err { color: #c08b72; }
+.dark .conn-row-loc { background: rgba(255,255,255,0.03); border-color: rgba(201,162,39,0.1); }
+.dark .conn-row-loc.active { border-color: rgba(126,200,160,0.2); }
+.dark .conn-loc-gps { background: rgba(201,162,39,0.08); color: #c9a227; }
+
 /* ── connectors ── */
 .conn-list {
   display: flex;

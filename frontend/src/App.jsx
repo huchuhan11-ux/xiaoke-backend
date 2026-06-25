@@ -185,7 +185,7 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
             <span className="su-val">{usageData?.count ?? '…'}</span>
           </div>
           <div className="su-row">
-            <span className="su-label">在一起</span>
+            <span className="su-label">陪伴天数</span>
             <span className="su-val">{daysTogether()} 天</span>
           </div>
           <div className="su-row">
@@ -313,14 +313,14 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
             <span className="conn-badge active">已连接</span>
           </div>
           {/* 位置 */}
-          <div className={`conn-row ${locEnabled ? 'active' : 'todo'}`} style={{ flexDirection: 'column', alignItems: 'stretch', gap: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div className={`conn-row-loc ${locEnabled ? 'active' : 'todo'}`}>
+            <div className="conn-row-loc-head">
               <span className="conn-icon">📍</span>
-              <div className="conn-info" style={{ flex: 1 }}>
+              <div className="conn-info">
                 <div className="conn-label">位置 <span className="conn-desc">获取当前城市</span></div>
                 <div className="conn-note">用于天气和问答</div>
               </div>
-              <button className={`conn-badge ${locEnabled ? 'active' : 'todo'}`} style={{ flexShrink: 0 }}
+              <button className={`conn-badge ${locEnabled ? 'active' : 'todo'}`}
                 onClick={() => {
                   const next = !locEnabled
                   setLocEnabled(next)
@@ -336,15 +336,13 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
               </button>
             </div>
             {locEnabled && (
-              <div style={{ marginTop: 8, paddingLeft: 36 }}>
-                <div className="conn-form-row">
-                  <input className="conn-input" style={{ flex: 1 }} placeholder="输入地址或城市" value={locInput}
-                    onChange={e => setLocInput(e.target.value)}
-                    onBlur={() => saveLocation(locInput)} />
-                  <button className="conn-badge todo" style={{ flexShrink: 0 }} onClick={autoLocate}>GPS</button>
-                </div>
-                {locSaved && <span style={{ fontSize: 11, color: '#7ec8a0', marginTop: 4, display: 'block' }}>已保存</span>}
-                {locGpsErr && <span style={{ fontSize: 11, color: '#c08b72', marginTop: 4, display: 'block' }}>GPS不可用，请手动输入</span>}
+              <div className="conn-row-loc-form">
+                <input className="conn-input conn-loc-input" placeholder="输入地址或城市" value={locInput}
+                  onChange={e => setLocInput(e.target.value)}
+                  onBlur={() => saveLocation(locInput)} />
+                <button className="conn-loc-gps" onClick={autoLocate}>GPS</button>
+                {locSaved && <span className="conn-loc-hint ok">已保存</span>}
+                {locGpsErr && <span className="conn-loc-hint err">GPS不可用，手动输入</span>}
               </div>
             )}
           </div>
@@ -407,12 +405,12 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
           </div>
           <div className="settings-row" onClick={() => setSubview('usage')}>
             <span className="settings-row-label">用量</span>
-            <span className="settings-row-val">消息 & 时长</span>
+            <span className="settings-row-val">消息 & 陪伴</span>
             <span className="settings-row-arrow">›</span>
           </div>
           <div className="settings-row" onClick={() => setSubview('connectors')}>
             <span className="settings-row-label">连接器</span>
-            <span className="settings-row-val">健康 · 位置</span>
+            <span className="settings-row-val">❤️ 📍 📓 ✉️</span>
             <span className="settings-row-arrow">›</span>
           </div>
           <div className="settings-row" onClick={() => setDark(d => !d)}>
@@ -514,7 +512,6 @@ const PAGE_META = {
   chat: { label: '聊天', icon: '💬', color: '#d4a574' },
   diary: { label: '日记', icon: '📔', color: '#b08968' },
   letter: { label: '信箱', icon: '✉️', color: '#a8765f' },
-  board: { label: '留言板', icon: '📌', color: '#c9a227' },
 }
 
 const MOODS = ['平静', '开心', '难过', '焦虑', '生气', '困惑', '沉重', '期待']
@@ -1298,11 +1295,12 @@ function Home({ dark, setDark, setTraceModal }) {
 }
 
 function fmtDuration(s) {
-  if (s < 60) return `${s}秒`
+  if (s < 60) return `${s}s`
   const m = Math.floor(s / 60)
-  if (m < 60) return `${m}分钟`
+  if (m < 60) return `${m}m`
   const h = Math.floor(m / 60)
-  return `${h}小时${m % 60}分钟`
+  const rm = m % 60
+  return rm > 0 ? `${h}h ${rm}m` : `${h}h`
 }
 
 function Monitor({ dark }) {
