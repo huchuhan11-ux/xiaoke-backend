@@ -161,7 +161,7 @@ html {
 }
 
 .inputarea {
-  padding: 12px 20px 44px;
+  padding: 16px 20px 12px;
   border-top: 0.5px solid rgba(192,139,114,0.18);
   flex-shrink: 0;
 }
@@ -2197,8 +2197,19 @@ button.diary-mood-btn {
 
 .cal-in .cal-dn { color: #6b5242; }
 
-.cal-today { outline: 1.5px solid #c08b72; outline-offset: -1px; }
-.cal-today .cal-dn { color: #c08b72; font-weight: 600; }
+.cal-today { outline: none; }
+.cal-today .cal-dn {
+  background: #c08b72;
+  color: #fff;
+  font-weight: 700;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
 
 .cal-dot {
   width: 3px;
@@ -2215,8 +2226,7 @@ button.diary-mood-btn {
 .dark .cal-dow { color: #7a6a4a; }
 .dark .cal-in .cal-dn { color: #c8b898; }
 .dark .cal-dn { color: #4a3a2a; }
-.dark .cal-today { outline-color: #c9a227; }
-.dark .cal-today .cal-dn { color: #c9a227; }
+.dark .cal-today .cal-dn { background: #c9a227; color: #1a1208; }
 .dark .cal-dot { background: rgba(201,162,39,0.4); }
 
 /* ── Session Drawer ── */

@@ -731,7 +731,7 @@ function Records() {
           <div className="records-home-sub">{diaryEntries.length > 0 ? `${diaryEntries.length} 篇` : '还没有记录'}</div>
         </div>
         <div className="records-home-card" onClick={() => setActiveSection('letter')}>
-          <div className="records-home-icon">✉</div>
+          <div className="records-home-icon">✉️</div>
           <div className="records-home-name">信</div>
           <div className="records-home-sub">{letterEntries.length > 0 ? `${letterEntries.length} 封` : '还没有信'}</div>
         </div>
@@ -1212,7 +1212,7 @@ export default function App() {
 
   const flushUsage = (page, ms) => {
     const seconds = Math.round(ms / 1000)
-    if (!page || seconds < 1) return
+    if (!page || seconds < 1 || seconds > 300) return
     const body = JSON.stringify({ page, seconds })
     if (navigator.sendBeacon) {
       navigator.sendBeacon(`${API}/api/usage`, new Blob([body], { type: 'application/json' }))
@@ -1280,7 +1280,15 @@ export default function App() {
       .then(r => r.json())
       .then(data => {
         if (data && data.length > 0) {
-          setMessages([...INIT, ...data.map(m => ({ id: m.id, role: m.role, content: m.content, trace: m.trace || null, ts: m.created_at ? new Date(m.created_at).getTime() : null }))])
+          const loaded = data.flatMap(m => {
+            const parts = (m.content || '').split('[MSG]').map(p => p.trim()).filter(Boolean)
+            if (parts.length > 1) {
+              const base = Number(m.id)
+              return parts.map((p, i) => ({ id: base + i, role: m.role, content: p, trace: i === 0 ? (m.trace || null) : undefined, ts: m.created_at ? new Date(m.created_at).getTime() : null }))
+            }
+            return [{ id: m.id, role: m.role, content: m.content, trace: m.trace || null, ts: m.created_at ? new Date(m.created_at).getTime() : null }]
+          })
+          setMessages([...INIT, ...loaded])
         } else {
           setMessages(INIT)
         }
