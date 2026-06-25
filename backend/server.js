@@ -15,6 +15,7 @@ const FRONTEND_DIST = path.join(PROJECT_ROOT, 'frontend', 'dist')
 
 let memoryCache = ''
 let lastFetch = 0
+let rateLimitCache = {}
 
 // ── 记忆系统（存在 Supabase memories 表，自动从聊天/日记提炼）──
 // 建表 SQL（在 Supabase dashboard 里执行一次）：
@@ -239,6 +240,9 @@ async function streamClaude(prompt, systemAppend, onDelta, model) {
             }
           } else if (ev.type === 'result') {
             fullText = ev.result || fullText
+          } else if (ev.type === 'rate_limit_event' && ev.rate_limit_info) {
+            const info = ev.rate_limit_info
+            rateLimitCache[info.rateLimitType] = { ...info, capturedAt: Date.now() }
           }
         } catch {}
       }
@@ -270,7 +274,13 @@ async function askClaude(prompt, systemAppend) {
 }
 
 // ── 聊天 ──
+app.get('/api/rate-limits', (req, res) => {
+  res.json(rateLimitCache)
+})
+
 app.get('/api/weather', async (req, res) => {
+  const city = req.query.city || 'Chengdu'
+  const displayName = req.query.name || '成都'
   try {
     const fmt = (data, name) => {
       const cur = data.current_condition[0]
@@ -284,12 +294,9 @@ app.get('/api/weather', async (req, res) => {
         uvIndex: cur.uvIndex || 0
       }
     }
-    const [r1, r2] = await Promise.all([
-      fetch('https://wttr.in/Chengdu?format=j1&lang=zh'),
-      fetch('https://wttr.in/Boston?format=j1&lang=zh')
-    ])
-    const [d1, d2] = await Promise.all([r1.json(), r2.json()])
-    res.json([fmt(d1, '成都'), fmt(d2, '波士顿')])
+    const r = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1&lang=zh`)
+    const d = await r.json()
+    res.json([fmt(d, displayName)])
   } catch (e) {
     res.status(500).json({ error: e.message })
   }

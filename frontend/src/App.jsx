@@ -629,7 +629,7 @@ function Records() {
             <button className="records-back-btn" style={{ padding: '10px 0 0' }} onClick={() => setActiveSection(null)}>←</button>
             <span className="records-nav-title">每日清单</span>
             <button className="todo-suggest-btn" onClick={suggestTodo} disabled={todoSuggesting}>
-              {todoSuggesting ? '想中…' : '小克来一条'}
+              {todoSuggesting ? '思考中' : '小克来一条'}
             </button>
           </div>
           <div className="todo-list" style={{ flex: 1, overflowY: 'auto' }}>
@@ -1070,6 +1070,7 @@ function fmtDuration(s) {
 function Monitor({ dark }) {
   const [usage, setUsage] = useState({})
   const [loading, setLoading] = useState(true)
+  const [rateLimits, setRateLimits] = useState({})
 
   const fetchData = () =>
     fetch(`${API}/api/usage`).then(r => r.json()).catch(() => ({ pages: {} }))
@@ -1078,12 +1079,18 @@ function Monitor({ dark }) {
       setLoading(false)
     })
 
+  const fetchRateLimits = () =>
+    fetch(`${API}/api/rate-limits`).then(r => r.json()).catch(() => ({}))
+    .then(d => setRateLimits(d))
+
   useEffect(() => {
     fetchData()
+    fetchRateLimits()
     const t = setInterval(fetchData, 60000)
-    const onVisible = () => { if (document.visibilityState === 'visible') fetchData() }
+    const t2 = setInterval(fetchRateLimits, 30000)
+    const onVisible = () => { if (document.visibilityState === 'visible') { fetchData(); fetchRateLimits() } }
     document.addEventListener('visibilitychange', onVisible)
-    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVisible) }
+    return () => { clearInterval(t); clearInterval(t2); document.removeEventListener('visibilitychange', onVisible) }
   }, [])
 
   const pageKeys = Object.keys(PAGE_META)
@@ -1125,6 +1132,54 @@ function Monitor({ dark }) {
         <div className="monitor-card-title">聊天日历</div>
         <Heatmap dark={dark} />
       </div>
+
+      {Object.keys(rateLimits).length > 0 && (
+        <div className="monitor-card">
+          <div className="monitor-card-title">Claude 用量</div>
+          {['five_hour', 'seven_day'].map(type => {
+            const info = rateLimits[type]
+            if (!info) return null
+            const label = type === 'five_hour' ? '5 小时' : '7 天'
+            const resetTime = (() => {
+              const d = new Date(info.resetsAt * 1000)
+              const now = new Date()
+              const diffMs = d - now
+              if (diffMs < 0) return '已重置'
+              if (diffMs < 24 * 3600 * 1000) {
+                return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+              }
+              return `${d.getMonth()+1}/${d.getDate()} ${d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
+            })()
+            const pct = (() => {
+              if (info.resetsAt && type === 'five_hour') {
+                const windowSec = 5 * 3600
+                const windowStart = info.resetsAt - windowSec
+                const elapsed = Date.now() / 1000 - windowStart
+                return Math.min(100, Math.max(0, Math.round(elapsed / windowSec * 100)))
+              }
+              if (info.resetsAt && type === 'seven_day') {
+                const windowSec = 7 * 24 * 3600
+                const windowStart = info.resetsAt - windowSec
+                const elapsed = Date.now() / 1000 - windowStart
+                return Math.min(100, Math.max(0, Math.round(elapsed / windowSec * 100)))
+              }
+              return null
+            })()
+            const limited = info.status === 'limited' || info.status === 'rate_limited'
+            return (
+              <div className="rl-row" key={type}>
+                <span className="rl-label">{label}</span>
+                {pct !== null && (
+                  <div className="rl-bar-track">
+                    <div className="rl-bar-fill" style={{ width: `${pct}%`, background: limited ? '#ff6b6b' : '#7ec8a0' }} />
+                  </div>
+                )}
+                <span className="rl-reset">{limited ? '⚠️ 受限' : '✓'} {resetTime} 重置</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
