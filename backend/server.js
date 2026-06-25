@@ -49,13 +49,66 @@ function getClaudeOAuth() {
   return null
 }
 
+async function refreshOAuthToken() {
+  const { execSync, execFileSync } = require('child_process')
+  let rawCreds = null, foundSvc = null
+  for (const svc of ['Claude Code-credentials', 'claude-code-credentials']) {
+    try {
+      const r = execSync(`security find-generic-password -s "${svc}" -w 2>/dev/null`, { encoding: 'utf8', timeout: 5000 }).trim()
+      if (r) { rawCreds = r; foundSvc = svc; break }
+    } catch {}
+  }
+  if (!rawCreds || !foundSvc) return false
+  let fullCreds
+  try { fullCreds = JSON.parse(rawCreds) } catch { return false }
+  const oauth = fullCreds?.claudeAiOauth
+  if (!oauth?.refreshToken) return false
+  const refreshBody = JSON.stringify({ grant_type: 'refresh_token', refresh_token: oauth.refreshToken })
+  const proxy = 'http://127.0.0.1:6952'
+  const tryRefresh = (useProxy) => {
+    const args = ['-s', '-X', 'POST', '-H', 'Content-Type: application/json', '-d', refreshBody]
+    if (useProxy) args.push('-x', proxy)
+    args.push('--max-time', '15', 'https://platform.claude.com/v1/oauth/token')
+    return execFileSync('curl', args, { encoding: 'utf8', timeout: 20000 })
+  }
+  let out
+  try { out = tryRefresh(true) } catch { try { out = tryRefresh(false) } catch { return false } }
+  let data
+  try { data = JSON.parse(out) } catch { return false }
+  if (!data.access_token) { console.log('OAuth refresh failed:', out.slice(0, 200)); return false }
+  fullCreds.claudeAiOauth = {
+    ...oauth,
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token || oauth.refreshToken,
+    expiresAt: data.expires_in ? Date.now() + data.expires_in * 1000 : Date.now() + 3600000
+  }
+  const tmpJson = `/tmp/cc-creds-${Date.now()}.json`
+  const tmpPy = `/tmp/cc-kc-${Date.now()}.py`
+  try {
+    fs.writeFileSync(tmpJson, JSON.stringify(fullCreds))
+    fs.writeFileSync(tmpPy, `import subprocess,sys\nsvc=sys.argv[1];path=sys.argv[2]\nwith open(path) as f: content=f.read()\nsubprocess.run(['security','delete-generic-password','-s',svc],capture_output=True)\nsubprocess.run(['security','add-generic-password','-s',svc,'-a','','-w',content])\n`)
+    execFileSync('python3', [tmpPy, foundSvc, tmpJson], { encoding: 'utf8', timeout: 10000 })
+    fs.unlinkSync(tmpJson); fs.unlinkSync(tmpPy)
+    claudeUsageCache = null; claudeUsageCacheAt = 0
+    console.log('OAuth token refreshed')
+    return true
+  } catch (e) {
+    try { fs.unlinkSync(tmpJson) } catch {}; try { fs.unlinkSync(tmpPy) } catch {}
+    return false
+  }
+}
+
 async function fetchClaudeUsage() {
   const now = Date.now()
   if (claudeUsageCache && now - claudeUsageCacheAt < 5 * 60 * 1000) return claudeUsageCache
   try {
-    const oauth = getClaudeOAuth()
+    let oauth = getClaudeOAuth()
     if (!oauth?.accessToken) return { ok: false, error: 'no OAuth token found' }
-    // Node.js fetch is blocked direct (China IP); use curl with local proxy, fall back to direct
+    if (oauth.expiresAt && oauth.expiresAt < now) {
+      console.log('OAuth token expired, refreshing...')
+      const ok = await refreshOAuthToken()
+      if (ok) oauth = getClaudeOAuth()
+    }
     const { execFileSync } = require('child_process')
     const curlUsage = (proxy) => {
       const args = ['-s', '--max-time', '8']

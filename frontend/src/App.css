@@ -565,17 +565,18 @@ html {
   bottom: 0 !important;
   left: 0 !important;
   right: 0 !important;
-  height: 64px !important;
+  height: calc(60px + env(safe-area-inset-bottom, 0px)) !important;
   background: rgba(253, 246, 240, 0.95) !important;
   backdrop-filter: blur(16px) !important;
   -webkit-backdrop-filter: blur(16px) !important;
   border-top: 1px solid rgba(192, 139, 114, 0.15) !important;
   display: flex !important;
   flex-direction: row !important;
-  align-items: center !important;
+  align-items: flex-start !important;
   justify-content: space-around !important;
   z-index: 999 !important;
-  padding-bottom: env(safe-area-inset-bottom) !important;
+  padding-top: 0 !important;
+  padding-bottom: env(safe-area-inset-bottom, 0px) !important;
 }
 
 .tab-item {
@@ -618,7 +619,7 @@ html {
 }
 
 .main {
-  padding-bottom: 64px !important;
+  padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px)) !important;
 }
 .theme-toggle {
   position: fixed !important;
@@ -1064,7 +1065,10 @@ button {
 
 .hv2-top {
   padding: max(52px, env(safe-area-inset-top, 52px)) 24px 24px;
-  background: linear-gradient(160deg, rgba(192,139,114,0.12) 0%, transparent 70%);
+  background: linear-gradient(160deg, rgba(192,139,114,0.12) 0%, transparent 70%), #fdf6f0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .hv2-clock {
@@ -1359,6 +1363,7 @@ button {
 }
 
 /* dark */
+.dark .hv2-top { background: linear-gradient(160deg, rgba(201,162,39,0.1) 0%, transparent 70%), #1a1612; }
 .dark .hv2-clock { color: #e8d5a3; }
 .dark .hv2-date { color: #9a8a5a; }
 .dark .hv2-greeting { color: #c8b070; }
@@ -1845,7 +1850,7 @@ button.diary-mood-btn {
 .home-wishes {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 14px;
 }
 
 .wish-item {
@@ -4073,7 +4078,7 @@ button.diary-mood-btn {
   gap: 8px;
   margin: -4px 0 4px;
 }
-.conn-form-row { display: flex; gap: 8px; align-items: flex-end; }
+.conn-form-row { display: flex; gap: 8px; align-items: flex-start; }
 .conn-input-label { display: flex; flex-direction: column; gap: 4px; flex: 1; }
 .conn-input-label > span { font-size: 11px; color: #a8765f; letter-spacing: 0.02em; padding-left: 2px; }
 .conn-input {

@@ -1,9 +1,26 @@
 <svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-  <rect width="512" height="512" rx="100" fill="#1a1612"/>
-  <circle cx="275" cy="220" r="120" fill="#c9a227" opacity="0.15"/>
-  <circle cx="275" cy="220" r="98" fill="#c9a227" opacity="0.12"/>
-  <circle cx="275" cy="220" r="75" fill="#e8d5a3"/>
-  <circle cx="220" cy="172" r="66" fill="#1a1612"/>
-  <text x="256" y="390" text-anchor="middle" font-family="serif" font-size="36" fill="#c9a227" letter-spacing="6" opacity="0.9">OUR PLACE</text>
-  <text x="256" y="420" text-anchor="middle" font-family="serif" font-size="20" fill="#c9a227" letter-spacing="3" opacity="0.5">2026.05.28</text>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#f2cbb0"/>
+      <stop offset="100%" stop-color="#a86040"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.22)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="512" height="512" rx="114" fill="url(#bg)"/>
+  <!-- Soft inner glow top -->
+  <ellipse cx="256" cy="120" rx="260" ry="120" fill="url(#glow)"/>
+  <!-- House walls -->
+  <rect x="128" y="252" width="256" height="178" rx="10" fill="rgba(255,255,255,0.22)" stroke="rgba(255,255,255,0.92)" stroke-width="18"/>
+  <!-- Roof -->
+  <polyline points="106,258 256,112 406,258" fill="none" stroke="rgba(255,255,255,0.92)" stroke-width="18" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- Chimney -->
+  <rect x="298" y="92" width="26" height="66" rx="6" fill="rgba(255,255,255,0.92)"/>
+  <!-- Door arch -->
+  <path d="M222,430 L222,334 A34,34,0,0,1,290,334 L290,430 Z" fill="rgba(255,255,255,0.88)"/>
+  <!-- Heart on door -->
+  <path d="M256,322 C256,322 238,308 238,294 C238,284.6 245.8,277 255,277 C255.7,277 256,277.4 256,277.4 C256,277.4 256.3,277 257,277 C266.2,277 274,284.6 274,294 C274,308 256,322 256,322Z" fill="#c07050"/>
 </svg>
