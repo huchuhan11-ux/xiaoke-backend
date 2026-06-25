@@ -124,9 +124,7 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
       .then(d => setClaudeUsage(d))
   }, [subview])
 
-  useEffect(() => {
-    if (subview === 'connectors' && !locInput) autoLocate()
-  }, [subview]) // eslint-disable-line
+  // removed auto-locate on open — user controls via toggle
 
   const set = (key, val) => setPrefs(p => ({ ...p, [key]: val }))
 
@@ -276,28 +274,42 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
                   <button className="conn-badge todo" style={{ flexShrink: 0 }} onClick={saveSleep}>记录</button>
                 </div>
                 {sleepSaved && <span style={{ fontSize: 11, color: '#7ec8a0', marginTop: 2 }}>已保存</span>}
-                <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4, lineHeight: 1.5 }}>
-                  自动获取：打开 iPhone「快捷指令」→ 新建快捷指令→ 添加「获取健康样本」(类别:睡眠分析)→ 「获取变量」计算时长→「URL」填 <span style={{ fontFamily: 'monospace', userSelect: 'all' }}>{API}/api/health</span>→「获取URL内容」POST JSON <span style={{ fontFamily: 'monospace' }}>{"{ date, sleep_hours }"}</span>→ 添加到「个人自动化」每天早上触发
-                </div>
               </div>
             </div>
           </div>
           {/* 位置 */}
           <div className={`conn-row ${locEnabled ? 'active' : 'todo'}`}>
             <span className="conn-icon">📍</span>
-            <div className="conn-info">
-              <div className="conn-label">位置 <span className="conn-desc">当前地址</span></div>
-              <div className="conn-form" style={{ marginTop: 6, padding: 0, background: 'none' }}>
-                <div className="conn-form-row">
-                  <input className="conn-input" placeholder="输入地址或城市" value={locInput}
-                    onChange={e => setLocInput(e.target.value)}
-                    onBlur={() => saveLocation(locInput)} />
-                  <button className="conn-badge todo" style={{ flexShrink: 0 }} onClick={autoLocate}>自动</button>
+            <div className="conn-info" style={{ flex: 1 }}>
+              <div className="conn-label">位置 <span className="conn-desc">获取当前城市</span></div>
+              <div className="conn-note">用于天气和问答</div>
+              {locEnabled && (
+                <div className="conn-form" style={{ marginTop: 6, padding: 0, background: 'none' }}>
+                  <div className="conn-form-row">
+                    <input className="conn-input" placeholder="输入地址或城市" value={locInput}
+                      onChange={e => setLocInput(e.target.value)}
+                      onBlur={() => saveLocation(locInput)} />
+                    <button className="conn-badge todo" style={{ flexShrink: 0 }} onClick={autoLocate}>GPS</button>
+                  </div>
+                  {locSaved && <span style={{ fontSize: 11, color: '#7ec8a0', marginTop: 2 }}>已保存</span>}
+                  {locGpsErr && <span style={{ fontSize: 11, color: '#c08b72', marginTop: 2 }}>GPS不可用，请手动输入</span>}
                 </div>
-                {locSaved && <span style={{ fontSize: 11, color: '#7ec8a0', marginTop: 2 }}>已保存</span>}
-                {locGpsErr && <span style={{ fontSize: 11, color: '#c08b72', marginTop: 2 }}>GPS不可用，请手动输入</span>}
-              </div>
+              )}
             </div>
+            <button className={`conn-badge ${locEnabled ? 'active' : 'todo'}`} style={{ flexShrink: 0 }}
+              onClick={() => {
+                const next = !locEnabled
+                setLocEnabled(next)
+                localStorage.setItem('locEnabled', next ? '1' : '0')
+                if (!next) {
+                  localStorage.removeItem('locText')
+                  setLocInput('')
+                  fetch(`${API}/api/config`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: 'userLocation', value: '' }) }).catch(() => {})
+                } else if (!locInput) autoLocate()
+              }}>
+              {locEnabled ? '已启用' : '启用'}
+            </button>
           </div>
           {/* 日历 */}
           <div className="conn-row active">
@@ -1147,7 +1159,7 @@ function Home({ dark, setDark, setTraceModal }) {
             </div>
           ) : health ? (
             <div className="hv2-health-grid">
-              <div className="hv2-health-item"><div className="hv2-health-lbl">睡眠</div><div className="hv2-health-val">{health.sleep_hours ? `${health.sleep_hours}h` : '—'}</div></div>
+              <div className="hv2-health-item"><div className="hv2-health-lbl">睡眠</div><div className="hv2-health-val">{health.sleep_hours ? (() => { const h = Math.floor(health.sleep_hours); const m = Math.round((health.sleep_hours - h) * 60); return m > 0 ? `${h}h ${m}m` : `${h}h` })() : '—'}</div></div>
               <div className="hv2-health-item"><div className="hv2-health-lbl">心率</div><div className="hv2-health-val">{health.resting_heart_rate ?? '—'}</div></div>
               <div className="hv2-health-item"><div className="hv2-health-lbl">步数</div><div className="hv2-health-val">{health.steps ? (health.steps >= 1000 ? `${(health.steps/1000).toFixed(1)}k` : health.steps) : '—'}</div></div>
               <div className="hv2-health-item"><div className="hv2-health-lbl">周期</div><div className="hv2-health-val">{health.cycle_day != null ? `D${health.cycle_day}` : '—'}</div></div>
@@ -1486,8 +1498,9 @@ export default function App() {
       .then(r => r.json())
       .then(data => {
         if (data && data.length > 0) {
+          const LOAD_MSG_RE = /\[MSG?\]|\[M[A-Z]*G\]/
           const loaded = data.flatMap(m => {
-            const parts = (m.content || '').split('[MSG]').map(p => p.trim()).filter(Boolean)
+            const parts = (m.content || '').split(LOAD_MSG_RE).map(p => p.trim()).filter(Boolean)
             if (parts.length > 1) {
               const base = Number(m.id)
               return parts.map((p, i) => ({ id: base + i, role: m.role, content: p, trace: i === 0 ? (m.trace || null) : undefined, ts: m.created_at ? new Date(m.created_at).getTime() : null }))

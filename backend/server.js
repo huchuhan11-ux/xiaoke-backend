@@ -172,7 +172,11 @@ async function buildRealContext() {
     const { data: h } = await supabase.from('health').select('*').eq('date', today).single()
     if (h) {
       const parts = []
-      if (h.sleep_hours != null && h.sleep_hours > 0) parts.push(`睡了 ${h.sleep_hours} 小时`)
+      if (h.sleep_hours != null && h.sleep_hours > 0) {
+        const hrs = Math.floor(h.sleep_hours)
+        const mins = Math.round((h.sleep_hours - hrs) * 60)
+        parts.push(`睡了 ${hrs}h${mins > 0 ? ` ${mins}m` : ''}`)
+      }
       if (h.resting_heart_rate) parts.push(`静息心率 ${h.resting_heart_rate} bpm`)
       if (h.steps) parts.push(`今日步数 ${h.steps}`)
       if (parts.length) healthStr = '\n身体数据：' + parts.join('，')
