@@ -89,6 +89,8 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
   const [claudeUsage, setClaudeUsage] = useState(null)
   const [locEnabled, setLocEnabled] = useState(() => localStorage.getItem('locEnabled') === '1')
   const [locStatus, setLocStatus] = useState(() => localStorage.getItem('locEnabled') === '1' ? 'granted' : null)
+  const [locInput, setLocInput] = useState(() => localStorage.getItem('locText') || '')
+  const [locSaved, setLocSaved] = useState(false)
   const [calForm, setCalForm] = useState(null)
   const [remForm, setRemForm] = useState(null)
 
@@ -200,33 +202,45 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
   }
 
   if (subview === 'connectors') {
-    const toggleLocation = () => {
-      const next = !locEnabled
-      setLocEnabled(next)
-      localStorage.setItem('locEnabled', next ? '1' : '0')
-      if (next) {
-        setLocStatus('granted')
-      } else {
-        setLocStatus(null)
-        localStorage.removeItem('userLat')
-        localStorage.removeItem('userLng')
-      }
+    const saveLocation = (text) => {
+      const val = text.trim()
+      localStorage.setItem('locText', val)
+      localStorage.setItem('locEnabled', val ? '1' : '0')
+      setLocEnabled(!!val)
+      fetch(`${API}/api/config`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'userLocation', value: val }) }).catch(() => {})
+      setLocSaved(true); setTimeout(() => setLocSaved(false), 1500)
     }
-    const downloadICS = (url) => {
-      const a = document.createElement('a')
-      a.href = url; a.download = url.includes('reminder') ? 'reminder.ics' : 'event.ics'
-      document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    const detectGPS = () => {
+      if (!navigator.geolocation) return
+      navigator.geolocation.getCurrentPosition(async pos => {
+        const { latitude: lat, longitude: lng } = pos.coords
+        try {
+          const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=zh`)
+          const d = await r.json()
+          const addr = d.address
+          const city = addr.city || addr.town || addr.county || addr.state || ''
+          const district = addr.suburb || addr.district || ''
+          const text = [city, district].filter(Boolean).join(' ')
+          setLocInput(text)
+          saveLocation(text)
+        } catch {
+          const text = `${lat.toFixed(3)},${lng.toFixed(3)}`
+          setLocInput(text); saveLocation(text)
+        }
+      }, () => {})
     }
+    const openICS = (url) => { window.location.href = url }
     const createCalEvent = () => {
       if (!calForm?.title) return
       const params = new URLSearchParams({ title: calForm.title, date: calForm.date || '', time: calForm.time || '', duration: calForm.duration || '60', notes: calForm.notes || '' })
-      downloadICS(`/api/ios/calendar?${params}`)
+      openICS(`/api/ios/calendar?${params}`)
       setCalForm(null)
     }
     const createReminder = () => {
       if (!remForm?.title) return
       const params = new URLSearchParams({ title: remForm.title, notes: remForm.notes || '', due: remForm.due || '' })
-      downloadICS(`/api/ios/reminder?${params}`)
+      openICS(`/api/ios/reminder?${params}`)
       setRemForm(null)
     }
     return (
@@ -243,16 +257,21 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
             </div>
             <span className="conn-badge active">已连接</span>
           </div>
-          {/* 位置 toggle */}
+          {/* 位置 */}
           <div className={`conn-row ${locEnabled ? 'active' : 'todo'}`}>
             <span className="conn-icon">📍</span>
             <div className="conn-info">
-              <div className="conn-label">位置 <span className="conn-desc">当前城市</span></div>
-              <div className="conn-note">{locEnabled ? '已启用，天气和问答使用成都' : '用于天气和问答'}</div>
+              <div className="conn-label">位置 <span className="conn-desc">当前地址</span></div>
+              <div className="conn-form" style={{ marginTop: 6, padding: 0, background: 'none' }}>
+                <div className="conn-form-row">
+                  <input className="conn-input" placeholder="输入地址或城市" value={locInput}
+                    onChange={e => setLocInput(e.target.value)}
+                    onBlur={() => saveLocation(locInput)} />
+                  <button className="conn-badge todo" style={{ flexShrink: 0 }} onClick={detectGPS}>定位</button>
+                </div>
+                {locSaved && <span style={{ fontSize: 11, color: '#7ec8a0', marginTop: 2 }}>已保存</span>}
+              </div>
             </div>
-            <button className={`conn-toggle ${locEnabled ? 'on' : 'off'}`} onClick={toggleLocation}>
-              <span className="conn-toggle-knob" />
-            </button>
           </div>
           {/* 日历 */}
           <div className="conn-row active">
@@ -1288,6 +1307,7 @@ export default function App() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [thinkDone, setThinkDone] = useState(null)
+  const [pendingActions, setPendingActions] = useState([])
   const thinkStartRef = useRef(null)
   const lastChatActivityRef = useRef(Date.now())
   const [bgImage, setBgImage] = useState(() => localStorage.getItem('chatBg') || '')
@@ -1572,6 +1592,8 @@ export default function App() {
               const payload = JSON.parse(line.slice(6))
               if (payload.trace) {
                 aiMsg = { ...aiMsg, trace: payload.trace }
+              } else if (payload.actions) {
+                setPendingActions(payload.actions)
               } else {
                 rawContent += payload.text
                 aiMsg = { ...aiMsg, content: rawContent.replace(/\[MSG\]/g, '').replace(/^\s+/, '') }
@@ -1698,6 +1720,35 @@ export default function App() {
                 </div>
                 ) : null
               ))}
+              {pendingActions.length > 0 && (
+                <div className="action-cards">
+                  {pendingActions.map((a, i) => {
+                    const isCal = a.type === 'cal'
+                    const openICS = () => {
+                      if (isCal) {
+                        const p = new URLSearchParams({ title: a.title, date: a.date || '', time: a.time || '', duration: '60', notes: a.notes || '' })
+                        window.location.href = `${API}/api/ios/calendar?${p}`
+                      } else {
+                        const p = new URLSearchParams({ title: a.title, due: a.due || '', notes: a.notes || '' })
+                        window.location.href = `${API}/api/ios/reminder?${p}`
+                      }
+                    }
+                    return (
+                      <div key={i} className="action-card">
+                        <span className="action-card-icon">{isCal ? '📅' : '⏰'}</span>
+                        <div className="action-card-body">
+                          <div className="action-card-title">{a.title}</div>
+                          <div className="action-card-sub">{isCal ? `${a.date} ${a.time || ''}` : a.due}</div>
+                        </div>
+                        <button className="action-card-btn" onClick={openICS}>
+                          {isCal ? '加入日历' : '添加提醒'}
+                        </button>
+                        <button className="action-card-close" onClick={() => setPendingActions(prev => prev.filter((_, j) => j !== i))}>✕</button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
               {loading && (
                 <div className="msg-group">
                   <div className="thinking-card">

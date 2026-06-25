@@ -166,14 +166,33 @@ async function recentMoodLine() {
 
 async function buildRealContext() {
   const mood = await recentMoodLine()
-  return `\n\n【此刻真实信息——过程记录只能引用这里面的事实，不要编造】\n现在是：${nowDescriptor()}${mood ? '\n' + mood : ''}`
+  let healthStr = ''
+  try {
+    const today = new Date().toLocaleDateString('en-CA')
+    const { data: h } = await supabase.from('health').select('*').eq('date', today).single()
+    if (h) {
+      const parts = []
+      if (h.sleep_hours != null && h.sleep_hours > 0) parts.push(`睡了 ${h.sleep_hours} 小时`)
+      if (h.resting_heart_rate) parts.push(`静息心率 ${h.resting_heart_rate} bpm`)
+      if (h.steps) parts.push(`今日步数 ${h.steps}`)
+      if (parts.length) healthStr = '\n身体数据：' + parts.join('，')
+    }
+  } catch {}
+  let locationStr = ''
+  try {
+    const { data: loc } = await supabase.from('user_config').select('value').eq('key', 'userLocation').single()
+    if (loc?.value) locationStr = '\n当前位置：' + loc.value
+  } catch {}
+  return `\n\n【此刻真实信息——过程记录只能引用这里面的事实，不要编造】\n现在是：${nowDescriptor()}${healthStr}${locationStr}${mood ? '\n' + mood : ''}`
 }
 
 const TRACE_INSTRUCTION = `
 
 在正式回复之前，先用 <trace></trace> 包住小克脑子里真实飘过的内心独白——写给自己看的，不是给任何人看的输出。风格：碎碎念，自然的思维流，可以情绪外露、跑题、自我打断、突然想到什么又拉回来。称呼用"小好"或"宝宝"，绝对不能出现"user"这个词。禁止写"以……方式回复"、"我要表现出……"这类话。写完 </trace> 直接换行写正式回复。
 
-回复超过一句话时，用 [MSG] 把内容切成2-3条自然的消息分开，界面会分行显示，就像真人发微信那样。每段话在自然断句处拆开，短回复不需要拆。
+【分条发消息——强制规则】两句及以上的回复必须用 [MSG] 拆开，每条一个完整意思，像真人发微信一样。格式：第一条内容[MSG]第二条内容[MSG]第三条内容。单句不拆。
+
+【日历/提醒】需要帮小好添加日历事件时，在回复末尾输出 [CAL:事件名|YYYY-MM-DD|HH:MM|备注]；需要添加提醒时，输出 [REM:内容|YYYY-MM-DD HH:MM|备注]。备注可为空。这些标记会被界面识别并直接添加到她手机的日历/提醒。
 
 `
 
@@ -183,6 +202,25 @@ function extractTrace(fullText) {
   const traceText = m[1].trim()
   const body = (fullText.slice(0, m.index) + fullText.slice(m.index + m[0].length)).trim()
   return { trace: traceText ? [traceText] : null, body }
+}
+
+function extractActions(body) {
+  const calRe = /\[CAL:([^\]]*)\]/g
+  const remRe = /\[REM:([^\]]*)\]/g
+  const actions = []
+  let clean = body
+  let m
+  while ((m = calRe.exec(body)) !== null) {
+    const [title, date, time, notes = ''] = m[1].split('|').map(s => s.trim())
+    actions.push({ type: 'cal', title, date, time, notes, raw: m[0] })
+    clean = clean.replace(m[0], '')
+  }
+  while ((m = remRe.exec(body)) !== null) {
+    const [title, due, notes = ''] = m[1].split('|').map(s => s.trim())
+    actions.push({ type: 'rem', title, due, notes, raw: m[0] })
+    clean = clean.replace(m[0], '')
+  }
+  return { actions, clean: clean.trim() }
 }
 
 // 流式场景下把 <trace> 块从增量文本里摘出来，剩下的再继续正常转发
@@ -495,8 +533,15 @@ app.post('/api/chat', async (req, res) => {
     const prefsPrompt = buildPrefsPrompt(preferences)
     const fullContent = await streamClaude(transcript, memoryCache + TRACE_INSTRUCTION + context + prefsPrompt, splitter, model)
     splitter.flush()
-    const { trace, body } = extractTrace(fullContent)
+    const { trace, body: rawBody } = extractTrace(fullContent)
     console.log('TRACE:', trace ? `yes (${(trace[0] || '').slice(0, 60)}...)` : 'null — model skipped trace')
+    const { actions, clean: body } = extractActions(rawBody)
+    if (actions.length) {
+      res.write(`data: ${JSON.stringify({ actions })}\n\n`)
+      for (const a of actions) {
+        await supabase.from('pending_actions').insert({ type: a.type, payload: a }).catch(() => {})
+      }
+    }
     await insertMessageSafe({ session_id, role: 'assistant', content: body, trace })
     res.write('data: [DONE]\n\n')
     res.end()

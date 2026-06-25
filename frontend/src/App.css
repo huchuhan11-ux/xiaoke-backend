@@ -4012,3 +4012,27 @@ button.diary-mood-btn {
 .dark .conn-form { background: rgba(201,162,39,0.05); }
 .dark .conn-input { border-color: rgba(201,162,39,0.2); }
 .dark .conn-form-btn { color: #c9a227; background: rgba(201,162,39,0.1); }
+
+/* Action cards (calendar / reminder) */
+.action-cards { display: flex; flex-direction: column; gap: 8px; padding: 8px 16px; }
+.action-card {
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(192,139,114,0.08); border: 0.5px solid rgba(192,139,114,0.25);
+  border-radius: 14px; padding: 10px 12px; font-size: 13px;
+}
+.dark .action-card { background: rgba(201,162,39,0.07); border-color: rgba(201,162,39,0.2); }
+.action-card-icon { font-size: 20px; flex-shrink: 0; }
+.action-card-body { flex: 1; min-width: 0; }
+.action-card-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.action-card-sub { font-size: 11px; opacity: 0.6; margin-top: 2px; }
+.action-card-btn {
+  flex-shrink: 0; padding: 5px 12px; border-radius: 20px; border: none; cursor: pointer;
+  background: rgba(192,139,114,0.2); color: #a8765f; font-size: 12px; font-family: inherit;
+  touch-action: manipulation;
+}
+.dark .action-card-btn { background: rgba(201,162,39,0.12); color: #c9a227; }
+.action-card-close {
+  flex-shrink: 0; background: none; border: none; opacity: 0.4; cursor: pointer;
+  font-size: 12px; padding: 4px; line-height: 1; touch-action: manipulation;
+}
+.action-card-close:hover { opacity: 0.8; }
