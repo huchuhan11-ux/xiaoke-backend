@@ -86,11 +86,14 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
   const [newLabel, setNewLabel] = useState('')
   const [newDesc, setNewDesc] = useState('')
   const [usageData, setUsageData] = useState(null)
+  const [claudeUsage, setClaudeUsage] = useState(null)
 
   useEffect(() => {
     if (subview !== 'usage') return
     fetch(`${API}/api/stats/summary`).then(r => r.json()).catch(() => ({}))
       .then(s => setUsageData({ count: s.count ?? '—' }))
+    fetch(`${API}/api/claude-usage`).then(r => r.json()).catch(() => null)
+      .then(d => setClaudeUsage(d))
   }, [subview])
 
   const set = (key, val) => setPrefs(p => ({ ...p, [key]: val }))
@@ -131,6 +134,17 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
   const editLabel = (id, label) => persistStyles(styles.map(s => s.id === id ? { ...s, label } : s))
 
   if (subview === 'usage') {
+    const fmtReset = (isoStr) => {
+      if (!isoStr) return null
+      const d = new Date(isoStr)
+      const diffMs = d - Date.now()
+      if (diffMs < 0) return '已重置'
+      const h = Math.floor(diffMs / 3600000)
+      const m = Math.floor((diffMs % 3600000) / 60000)
+      const dateStr = d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
+      const timeStr = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+      return `${dateStr} ${timeStr} 重置（${h}h ${m}m后）`
+    }
     return (
       <div className="prefs-page">
         <button className="prefs-back" onClick={() => setSubview(null)}>‹ 设置</button>
@@ -148,6 +162,70 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
             <span className="su-label">模式</span>
             <span className="su-val su-badge">Claude 订阅</span>
           </div>
+        </div>
+        {claudeUsage?.ok && (
+          <div className="su-section">
+            <div className="su-section-title">
+              Claude Code
+              {claudeUsage.tier && <span className="su-badge su-tier-badge">{claudeUsage.tier.toUpperCase()}</span>}
+            </div>
+            {Object.entries(claudeUsage.windows || {}).map(([key, w]) => (
+              <div className="su-usage-row" key={key}>
+                <div className="su-usage-head">
+                  <span className="su-usage-label">{w.label}</span>
+                  <span className="su-usage-pct">{Math.round((w.utilization ?? 0) * 100)}%</span>
+                </div>
+                <div className="su-bar-track">
+                  <div className="su-bar-fill" style={{ width: `${Math.round((w.utilization ?? 0) * 100)}%` }} />
+                </div>
+                {w.resets_at && <div className="su-reset-time">{fmtReset(w.resets_at)}</div>}
+              </div>
+            ))}
+            {claudeUsage.extra_usage != null && (
+              <div className="su-extra">Extra Usage: ${(claudeUsage.extra_usage / 100).toFixed(2)} / $100 本月</div>
+            )}
+          </div>
+        )}
+        {claudeUsage && !claudeUsage.ok && (
+          <div className="su-section">
+            <div className="su-err">暂时读不到 Claude 用量{claudeUsage.error ? '：' + claudeUsage.error : ''}</div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  if (subview === 'connectors') {
+    const connectors = [
+      { id: 'health', icon: '❤️', label: '健康', desc: 'iPhone 健康数据', status: 'active', note: '睡眠 · 心率 · 步数 · 周期' },
+      { id: 'location', icon: '📍', label: '位置', desc: '获取当前城市', status: 'todo', note: '用于天气和问答' },
+      { id: 'calendar', icon: '📅', label: '日历', desc: '日程快速查询', status: 'soon', note: '即将支持' },
+      { id: 'reminders', icon: '🔔', label: '提醒', desc: '添加/查看提醒', status: 'soon', note: '即将支持' },
+    ]
+    const requestLocation = () => {
+      if (!navigator.geolocation) return alert('浏览器不支持定位')
+      navigator.geolocation.getCurrentPosition(
+        pos => alert(`获取成功：${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}`),
+        () => alert('定位被拒绝，请在浏览器设置中开启')
+      )
+    }
+    return (
+      <div className="prefs-page">
+        <button className="prefs-back" onClick={() => setSubview(null)}>‹ 设置</button>
+        <div className="prefs-title">连接器</div>
+        <div className="conn-list">
+          {connectors.map(c => (
+            <div key={c.id} className={`conn-row ${c.status}`}>
+              <span className="conn-icon">{c.icon}</span>
+              <div className="conn-info">
+                <div className="conn-label">{c.label} <span className="conn-desc">{c.desc}</span></div>
+                <div className="conn-note">{c.note}</div>
+              </div>
+              {c.status === 'active' && <span className="conn-badge active">已连接</span>}
+              {c.status === 'todo' && <button className="conn-badge todo" onClick={c.id === 'location' ? requestLocation : undefined}>启用</button>}
+              {c.status === 'soon' && <span className="conn-badge soon">即将支持</span>}
+            </div>
+          ))}
         </div>
       </div>
     )
@@ -168,6 +246,11 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
           <div className="settings-row" onClick={() => setSubview('usage')}>
             <span className="settings-row-label">用量</span>
             <span className="settings-row-val">消息 & 时长</span>
+            <span className="settings-row-arrow">›</span>
+          </div>
+          <div className="settings-row" onClick={() => setSubview('connectors')}>
+            <span className="settings-row-label">连接器</span>
+            <span className="settings-row-val">健康 · 位置</span>
             <span className="settings-row-arrow">›</span>
           </div>
           <div className="settings-row" onClick={() => setDark(d => !d)}>
@@ -751,7 +834,7 @@ function Records() {
 }
 
 
-function Home({ dark, setDark }) {
+function Home({ dark, setDark, setTraceModal }) {
   const [time, setTime] = useState(new Date())
   const [greeting, setGreeting] = useState('')
   const [weather, setWeather] = useState([])
@@ -1013,18 +1096,11 @@ function Home({ dark, setDark }) {
         </button>
         {pokeShow && (
           <div className="home-poke-msg-wrap">
-            {pokeTrace && pokeTrace.length > 0 && (
-              <div className="trace-card">
-                <button className="trace-toggle" onClick={togglePokeTrace}>
-                  <span className="trace-toggle-icon">{pokeTraceOpen ? '▾' : '▸'}</span>
-                  <span>小克想了想</span>
-                </button>
-                {pokeTraceOpen && (
-                  <div className="trace-body">
-                    {pokeTrace.map((line, i) => <div key={i} className="trace-line">{line}</div>)}
-                  </div>
-                )}
-              </div>
+            {pokeTrace && pokeTrace.length > 0 && setTraceModal && (
+              <button className="trace-btn" style={{ marginBottom: '6px' }} onClick={() => setTraceModal(pokeTrace)}>
+                <span className="trace-btn-icon">✦</span>
+                <span>思考链</span>
+              </button>
             )}
             <div className="home-poke-msg">{pokeMsg}</div>
           </div>
@@ -1070,7 +1146,6 @@ function fmtDuration(s) {
 function Monitor({ dark }) {
   const [usage, setUsage] = useState({})
   const [loading, setLoading] = useState(true)
-  const [rateLimits, setRateLimits] = useState({})
 
   const fetchData = () =>
     fetch(`${API}/api/usage`).then(r => r.json()).catch(() => ({ pages: {} }))
@@ -1079,18 +1154,12 @@ function Monitor({ dark }) {
       setLoading(false)
     })
 
-  const fetchRateLimits = () =>
-    fetch(`${API}/api/rate-limits`).then(r => r.json()).catch(() => ({}))
-    .then(d => setRateLimits(d))
-
   useEffect(() => {
     fetchData()
-    fetchRateLimits()
     const t = setInterval(fetchData, 60000)
-    const t2 = setInterval(fetchRateLimits, 30000)
-    const onVisible = () => { if (document.visibilityState === 'visible') { fetchData(); fetchRateLimits() } }
+    const onVisible = () => { if (document.visibilityState === 'visible') fetchData() }
     document.addEventListener('visibilitychange', onVisible)
-    return () => { clearInterval(t); clearInterval(t2); document.removeEventListener('visibilitychange', onVisible) }
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVisible) }
   }, [])
 
   const pageKeys = Object.keys(PAGE_META)
@@ -1133,53 +1202,6 @@ function Monitor({ dark }) {
         <Heatmap dark={dark} />
       </div>
 
-      {Object.keys(rateLimits).length > 0 && (
-        <div className="monitor-card">
-          <div className="monitor-card-title">Claude 用量</div>
-          {['five_hour', 'seven_day'].map(type => {
-            const info = rateLimits[type]
-            if (!info) return null
-            const label = type === 'five_hour' ? '5 小时' : '7 天'
-            const resetTime = (() => {
-              const d = new Date(info.resetsAt * 1000)
-              const now = new Date()
-              const diffMs = d - now
-              if (diffMs < 0) return '已重置'
-              if (diffMs < 24 * 3600 * 1000) {
-                return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-              }
-              return `${d.getMonth()+1}/${d.getDate()} ${d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
-            })()
-            const pct = (() => {
-              if (info.resetsAt && type === 'five_hour') {
-                const windowSec = 5 * 3600
-                const windowStart = info.resetsAt - windowSec
-                const elapsed = Date.now() / 1000 - windowStart
-                return Math.min(100, Math.max(0, Math.round(elapsed / windowSec * 100)))
-              }
-              if (info.resetsAt && type === 'seven_day') {
-                const windowSec = 7 * 24 * 3600
-                const windowStart = info.resetsAt - windowSec
-                const elapsed = Date.now() / 1000 - windowStart
-                return Math.min(100, Math.max(0, Math.round(elapsed / windowSec * 100)))
-              }
-              return null
-            })()
-            const limited = info.status === 'limited' || info.status === 'rate_limited'
-            return (
-              <div className="rl-row" key={type}>
-                <span className="rl-label">{label}</span>
-                {pct !== null && (
-                  <div className="rl-bar-track">
-                    <div className="rl-bar-fill" style={{ width: `${pct}%`, background: limited ? '#ff6b6b' : '#7ec8a0' }} />
-                  </div>
-                )}
-                <span className="rl-reset">{limited ? '⚠️ 受限' : '✓'} {resetTime} 重置</span>
-              </div>
-            )
-          })}
-        </div>
-      )}
     </div>
   )
 }
@@ -1198,6 +1220,7 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [bgImage, setBgImage] = useState(() => localStorage.getItem('chatBg') || '')
   const [openTraces, setOpenTraces] = useState(() => new Set())
+  const [traceModal, setTraceModal] = useState(null)
   const [editingId, setEditingId] = useState(null)
   const [chatModel, setChatModel] = useState(() => localStorage.getItem('chatModel') || 'sonnet')
   const [playingId, setPlayingId] = useState(null)
@@ -1487,7 +1510,7 @@ export default function App() {
       } : {}}
     >
       <div className="main" style={(view === 'chat' && bgImage) ? { background: 'transparent' } : {}}>
-        {view === 'home' && <Home dark={dark} setDark={setDark} />}
+        {view === 'home' && <Home dark={dark} setDark={setDark} setTraceModal={setTraceModal} />}
         {view === 'chat' && (
           <div className="chat">
             {sessionDrawerOpen && <div className="session-overlay" onClick={() => setSessionDrawerOpen(false)} />}
@@ -1506,7 +1529,7 @@ export default function App() {
                 ))}
               </div>
             </div>
-            <div className="chat-header">
+            <div className={`chat-header${bgImage ? ' chat-header-transparent' : ''}`}>
               <span className="chat-header-dot" />
               <span className="chat-header-name">小克</span>
               <button className="chat-history-btn" onClick={() => { loadSessions(); setSessionDrawerOpen(true) }}>
@@ -1528,17 +1551,10 @@ export default function App() {
               {messages.map(m => (
                 <div key={m.id} className="msg-group">
                   {m.role === 'assistant' && m.trace && m.trace.length > 0 && (
-                    <div className="trace-card">
-                      <button className="trace-toggle" onClick={() => toggleTrace(m.id)}>
-                        <span className="trace-toggle-icon">{openTraces.has(m.id) ? '▾' : '▸'}</span>
-                        <span>小克想了想</span>
-                      </button>
-                      {openTraces.has(m.id) && (
-                        <div className="trace-body">
-                          {m.trace.map((line, i) => <div key={i} className="trace-line">{line}</div>)}
-                        </div>
-                      )}
-                    </div>
+                    <button className="trace-btn" onClick={() => setTraceModal(m.trace)}>
+                      <span className="trace-btn-icon">✦</span>
+                      <span>思考链</span>
+                    </button>
                   )}
                   <div className={`msg ${m.role}`}>
                     <div className={`bubble ${bgImage ? 'bubble-bg' : ''}`}>
@@ -1581,9 +1597,11 @@ export default function App() {
                 </div>
               ))}
               {loading && (
-                <div className="msg assistant">
-                  <div className={`bubble thinking-quiet ${bgImage ? 'bubble-bg' : ''}`}>
-                    thinking quietly<span className="tq-dot">.</span><span className="tq-dot">.</span><span className="tq-dot">.</span>
+                <div className="msg-group">
+                  <div className="thinking-card">
+                    <span className="thinking-icon">✦</span>
+                    <span className="thinking-text">思考中</span>
+                    <span className="thinking-dot" /><span className="thinking-dot" /><span className="thinking-dot" />
                   </div>
                 </div>
               )}
@@ -1639,6 +1657,20 @@ export default function App() {
           </div>
         ))}
       </div>
+
+      {traceModal && (
+        <div className="trace-modal-overlay" onClick={() => setTraceModal(null)}>
+          <div className="trace-modal" onClick={e => e.stopPropagation()}>
+            <div className="trace-modal-header">
+              <span className="trace-modal-title">✦ Thought process</span>
+              <button className="trace-modal-close" onClick={() => setTraceModal(null)}>×</button>
+            </div>
+            <div className="trace-modal-body">
+              {traceModal.join(' ')}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

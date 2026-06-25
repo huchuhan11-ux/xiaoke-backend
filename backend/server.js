@@ -2,6 +2,7 @@ require('dotenv').config()
 const express = require('express')
 const cors = require('cors')
 const path = require('path')
+const os = require('os')
 const { spawn, execFile } = require('child_process')
 const fs = require('fs')
 const { createClient } = require('@supabase/supabase-js')
@@ -16,6 +17,60 @@ const FRONTEND_DIST = path.join(PROJECT_ROOT, 'frontend', 'dist')
 let memoryCache = ''
 let lastFetch = 0
 let rateLimitCache = {}
+
+const CLAUDE_CREDS = path.join(os.homedir(), '.claude', 'credentials.json')
+let claudeUsageCache = null
+let claudeUsageCacheAt = 0
+
+function getClaudeOAuth() {
+  // Try plain credentials.json file first
+  try {
+    const creds = JSON.parse(fs.readFileSync(CLAUDE_CREDS, 'utf8'))
+    const oauth = creds?.claudeAiOauth || {}
+    if (oauth.accessToken) return oauth
+  } catch {}
+  // Try macOS Keychain with different service names
+  const keychainServices = ['claude-code-credentials', 'claude-ai-credentials', 'anthropic-claude']
+  for (const svc of keychainServices) {
+    try {
+      const { execSync } = require('child_process')
+      const raw = execSync(`security find-generic-password -s "${svc}" -w 2>/dev/null`, { encoding: 'utf8' }).trim()
+      if (!raw) continue
+      const creds = JSON.parse(raw)
+      const oauth = creds?.claudeAiOauth || {}
+      if (oauth.accessToken) return oauth
+    } catch {}
+  }
+  // Try ANTHROPIC_AUTH_TOKEN from server environment (set by some Claude setups)
+  const envToken = process.env.ANTHROPIC_AUTH_TOKEN
+  if (envToken) return { accessToken: envToken }
+  return null
+}
+
+async function fetchClaudeUsage() {
+  const now = Date.now()
+  if (claudeUsageCache && now - claudeUsageCacheAt < 5 * 60 * 1000) return claudeUsageCache
+  try {
+    const oauth = getClaudeOAuth()
+    if (!oauth?.accessToken) return { ok: false, error: 'no OAuth token found' }
+    const r = await fetch('https://api.anthropic.com/api/oauth/usage', {
+      headers: { 'Authorization': `Bearer ${oauth.accessToken}`, 'anthropic-beta': 'oauth-2025-04-20' }
+    })
+    const data = await r.json()
+    const KEYS = { five_hour: '5 小时', seven_day: '7 天总量', seven_day_sonnet: '7 天 Sonnet' }
+    const windows = {}
+    for (const [key, label] of Object.entries(KEYS)) {
+      const w = data[key]
+      if (w != null && w.utilization != null) windows[key] = { label, utilization: w.utilization, resets_at: w.resets_at }
+    }
+    const result = { ok: true, plan: oauth.subscriptionType, tier: oauth.rateLimitTier, windows, extra_usage: data.extra_usage }
+    claudeUsageCache = result
+    claudeUsageCacheAt = now
+    return result
+  } catch (e) {
+    return { ok: false, error: e.message }
+  }
+}
 
 // ── 记忆系统（存在 Supabase memories 表，自动从聊天/日记提炼）──
 // 建表 SQL（在 Supabase dashboard 里执行一次）：
@@ -116,18 +171,18 @@ async function buildRealContext() {
 
 const TRACE_INSTRUCTION = `
 
-在正式回复之前，先输出一段"过程记录"，格式：<trace>条目1|条目2</trace>，2到4条，每条不超过18字，第一人称口语，像脑子里飘过的念头（例如"周六中午12:28，居然才刚醒"），不是日志体；如果这条回复其实不用查什么，写1条很简短的就行，别硬凑。写完 </trace> 换行，紧接着写正式回复正文，正文里不要重复过程记录已经说过的内容。
+在正式回复之前，先用 <trace></trace> 包住小克脑子里真实飘过的内心独白——写给自己看的，不是给任何人看的输出。风格：碎碎念，自然的思维流，可以情绪外露、跑题、自我打断、突然想到什么又拉回来。称呼用"小好"或"宝宝"，绝对不能出现"user"这个词。禁止写"以……方式回复"、"我要表现出……"这类话。写完 </trace> 直接换行写正式回复。
 
-如果感觉自然，可以用 [MSG] 把回复切成2-3条分开发出去，界面会分开显示，就像真人发消息那样拆开。不强求，只在真的适合拆的时候用。比如先发"嗯"再发完整的话，或者先说情绪再说内容。
+如果感觉自然，可以用 [MSG] 把回复切成2-3条分开发出去，界面会分开显示，就像真人发消息那样拆开。不强求，只在真的适合拆的时候用。
 
 `
 
 function extractTrace(fullText) {
   const m = fullText.match(/<trace>([\s\S]*?)<\/trace>\s*\n?/)
   if (!m) return { trace: null, body: fullText.trim() }
-  const trace = m[1].split('|').map(s => s.trim()).filter(Boolean)
+  const traceText = m[1].trim()
   const body = (fullText.slice(0, m.index) + fullText.slice(m.index + m[0].length)).trim()
-  return { trace: trace.length ? trace : null, body }
+  return { trace: traceText ? [traceText] : null, body }
 }
 
 // 流式场景下把 <trace> 块从增量文本里摘出来，剩下的再继续正常转发
@@ -144,8 +199,8 @@ function makeTraceSplitter(onText, onTrace) {
     }
     const openIdx = buffer.indexOf('<trace>')
     if (openIdx !== -1) {
-      const items = buffer.slice(openIdx + 7, closeIdx).split('|').map(s => s.trim()).filter(Boolean)
-      if (items.length) onTrace(items)
+      const text = buffer.slice(openIdx + 7, closeIdx).trim()
+      if (text) onTrace([text])
     }
     const rest = buffer.slice(closeIdx + 8).replace(/^\s*\n/, '')
     resolved = true
@@ -276,6 +331,11 @@ async function askClaude(prompt, systemAppend) {
 // ── 聊天 ──
 app.get('/api/rate-limits', (req, res) => {
   res.json(rateLimitCache)
+})
+
+app.get('/api/claude-usage', async (req, res) => {
+  const result = await fetchClaudeUsage()
+  res.json(result)
 })
 
 app.get('/api/weather', async (req, res) => {
