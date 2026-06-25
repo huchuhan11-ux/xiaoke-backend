@@ -199,7 +199,9 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
               Claude Code
               {claudeUsage.tier && <span className="su-badge su-tier-badge">{claudeUsage.tier.toUpperCase()}</span>}
             </div>
-            {Object.entries(claudeUsage.windows || {}).map(([key, w]) => (
+            {Object.keys(claudeUsage.windows || {}).length === 0
+              ? <div className="su-reset-time" style={{ padding: '8px 0' }}>暂无用量数据（可能刚重置）</div>
+              : Object.entries(claudeUsage.windows).map(([key, w]) => (
               <div className="su-usage-row" key={key}>
                 <div className="su-usage-head">
                   <span className="su-usage-label">{w.label}</span>
@@ -243,17 +245,42 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
         body: JSON.stringify({ date: today, sleep_hours: h }) }).catch(() => {})
       setSleepSaved(true); setTimeout(() => setSleepSaved(false), 1500)
     }
-    const openICS = (url) => { window.location.href = url }
+    const buildICS = (type, fields) => {
+      const uid = Date.now() + '@xiaokehome'
+      const now = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15) + 'Z'
+      const pad = n => String(n).padStart(2, '0')
+      return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//xiaokeHome//EN',
+        `BEGIN:${type}`, `UID:${uid}`, `DTSTAMP:${now}`,
+        ...fields, `END:${type}`, 'END:VCALENDAR'].join('\r\n')
+    }
+    const openICS = (ics) => {
+      window.location.href = `data:text/calendar;charset=utf8,${encodeURIComponent(ics)}`
+    }
     const createCalEvent = () => {
       if (!calForm?.title) return
-      const params = new URLSearchParams({ title: calForm.title, date: calForm.date || '', time: calForm.time || '', duration: calForm.duration || '60', notes: calForm.notes || '' })
-      openICS(`/api/ios/calendar?${params}`)
+      const pad = n => String(n).padStart(2, '0')
+      const fields = [`SUMMARY:${calForm.title}`]
+      if (calForm.date && calForm.time) {
+        const local = calForm.date.replace(/-/g, '') + 'T' + calForm.time.replace(':', '') + '00'
+        const endMs = new Date(`${calForm.date}T${calForm.time}`).getTime() + (parseInt(calForm.duration) || 60) * 60000
+        const ed = new Date(endMs)
+        const endLocal = `${ed.getFullYear()}${pad(ed.getMonth()+1)}${pad(ed.getDate())}T${pad(ed.getHours())}${pad(ed.getMinutes())}00`
+        fields.push(`DTSTART;TZID=Asia/Shanghai:${local}`, `DTEND;TZID=Asia/Shanghai:${endLocal}`)
+      }
+      if (calForm.notes) fields.push(`DESCRIPTION:${calForm.notes}`)
+      openICS(buildICS('VEVENT', fields))
       setCalForm(null)
     }
     const createReminder = () => {
       if (!remForm?.title) return
-      const params = new URLSearchParams({ title: remForm.title, notes: remForm.notes || '', due: remForm.due || '' })
-      openICS(`/api/ios/reminder?${params}`)
+      const pad = n => String(n).padStart(2, '0')
+      const fields = [`SUMMARY:${remForm.title}`, 'STATUS:NEEDS-ACTION']
+      if (remForm.due) {
+        const dt = new Date(remForm.due)
+        fields.push(`DUE;TZID=Asia/Shanghai:${dt.getFullYear()}${pad(dt.getMonth()+1)}${pad(dt.getDate())}T${pad(dt.getHours())}${pad(dt.getMinutes())}00`)
+      }
+      if (remForm.notes) fields.push(`DESCRIPTION:${remForm.notes}`)
+      openICS(buildICS('VTODO', fields))
       setRemForm(null)
     }
     return (
@@ -266,16 +293,9 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
             <span className="conn-icon">❤️</span>
             <div className="conn-info">
               <div className="conn-label">健康 <span className="conn-desc">iPhone 健康数据</span></div>
-              <div className="conn-note">心率 · 步数 · 周期（自动）</div>
-              <div className="conn-form" style={{ marginTop: 6, padding: 0, background: 'none' }}>
-                <div className="conn-form-row">
-                  <input className="conn-input" type="number" placeholder="今日睡眠 (小时)" min="0" max="24" step="0.5"
-                    value={sleepInput} onChange={e => setSleepInput(e.target.value)} />
-                  <button className="conn-badge todo" style={{ flexShrink: 0 }} onClick={saveSleep}>记录</button>
-                </div>
-                {sleepSaved && <span style={{ fontSize: 11, color: '#7ec8a0', marginTop: 2 }}>已保存</span>}
-              </div>
+              <div className="conn-note">睡眠 · 心率 · 步数 · 周期（自动）</div>
             </div>
+            <span className="conn-badge active">已连接</span>
           </div>
           {/* 位置 */}
           <div className={`conn-row ${locEnabled ? 'active' : 'todo'}`}>
@@ -330,7 +350,7 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
                 <input className="conn-input" type="time" value={calForm.time} onChange={e => setCalForm(f => ({ ...f, time: e.target.value }))} />
               </div>
               <input className="conn-input" placeholder="备注（可选）" value={calForm.notes} onChange={e => setCalForm(f => ({ ...f, notes: e.target.value }))} />
-              <button className="conn-form-btn" onClick={createCalEvent}>下载 ICS → 添加到日历</button>
+              <button className="conn-form-btn" onClick={createCalEvent}>添加到日历</button>
             </div>
           )}
           {/* 提醒 */}
@@ -349,7 +369,7 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
               <input className="conn-input" placeholder="提醒内容" value={remForm.title} onChange={e => setRemForm(f => ({ ...f, title: e.target.value }))} />
               <input className="conn-input" type="datetime-local" value={remForm.due} onChange={e => setRemForm(f => ({ ...f, due: e.target.value }))} />
               <input className="conn-input" placeholder="备注（可选）" value={remForm.notes} onChange={e => setRemForm(f => ({ ...f, notes: e.target.value }))} />
-              <button className="conn-form-btn" onClick={createReminder}>下载 ICS → 添加到提醒</button>
+              <button className="conn-form-btn" onClick={createReminder}>添加到提醒</button>
             </div>
           )}
         </div>
@@ -1606,11 +1626,14 @@ export default function App() {
       ...currentPrefs,
       styleDesc: selStyle && selStyle.id !== 'default' ? selStyle.desc : undefined
     }
+    const abortCtrl = new AbortController()
+    const abortTimer = setTimeout(() => abortCtrl.abort(), 90000)
     try {
       const res = await fetch(`${API}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: history, session_id: sessionId, preferences: prefsWithDesc, model: chatModel, attachment: att ? { name: att.name, mime: att.mime, isImage: att.isImage, data: att.data } : null })
+        body: JSON.stringify({ messages: history, session_id: sessionId, preferences: prefsWithDesc, model: chatModel, attachment: att ? { name: att.name, mime: att.mime, isImage: att.isImage, data: att.data } : null }),
+        signal: abortCtrl.signal
       })
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
@@ -1652,9 +1675,14 @@ export default function App() {
       } else if (secs != null) {
         setMessages(prev => prev.map(m => m.id === aiMsg.id ? { ...m, thinkSecs: secs } : m))
       }
-    } catch {
-      setMessages(prev => [...prev, { id: Date.now(), role: 'assistant', content: '出错了，待会儿再试。' }])
+    } catch (e) {
+      if (e?.name === 'AbortError') {
+        setMessages(prev => [...prev, { id: Date.now(), role: 'assistant', content: '等太久没反应，网络可能卡了，待会儿再试。' }])
+      } else {
+        setMessages(prev => [...prev, { id: Date.now(), role: 'assistant', content: '出错了，待会儿再试。' }])
+      }
     } finally {
+      clearTimeout(abortTimer)
       setLoading(false)
       loadSessions()
     }
@@ -1762,13 +1790,36 @@ export default function App() {
                   {pendingActions.map((a, i) => {
                     const isCal = a.type === 'cal'
                     const openICS = () => {
-                      if (isCal) {
-                        const p = new URLSearchParams({ title: a.title, date: a.date || '', time: a.time || '', duration: '60', notes: a.notes || '' })
-                        window.location.href = `${API}/api/ios/calendar?${p}`
-                      } else {
-                        const p = new URLSearchParams({ title: a.title, due: a.due || '', notes: a.notes || '' })
-                        window.location.href = `${API}/api/ios/reminder?${p}`
+                      const pad = n => String(n).padStart(2, '0')
+                      const buildICS = (type, fields) => {
+                        const uid = Date.now() + '@xiaokehome'
+                        const now = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15) + 'Z'
+                        return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//xiaokeHome//EN',
+                          `BEGIN:${type}`, `UID:${uid}`, `DTSTAMP:${now}`,
+                          ...fields, `END:${type}`, 'END:VCALENDAR'].join('\r\n')
                       }
+                      let ics
+                      if (isCal) {
+                        const fields = [`SUMMARY:${a.title}`]
+                        if (a.date && a.time) {
+                          const local = a.date.replace(/-/g, '') + 'T' + a.time.replace(':', '') + '00'
+                          const endMs = new Date(`${a.date}T${a.time}`).getTime() + 60 * 60000
+                          const ed = new Date(endMs)
+                          const endLocal = `${ed.getFullYear()}${pad(ed.getMonth()+1)}${pad(ed.getDate())}T${pad(ed.getHours())}${pad(ed.getMinutes())}00`
+                          fields.push(`DTSTART;TZID=Asia/Shanghai:${local}`, `DTEND;TZID=Asia/Shanghai:${endLocal}`)
+                        }
+                        if (a.notes) fields.push(`DESCRIPTION:${a.notes}`)
+                        ics = buildICS('VEVENT', fields)
+                      } else {
+                        const fields = [`SUMMARY:${a.title}`, 'STATUS:NEEDS-ACTION']
+                        if (a.due) {
+                          const dt = new Date(a.due)
+                          fields.push(`DUE;TZID=Asia/Shanghai:${dt.getFullYear()}${pad(dt.getMonth()+1)}${pad(dt.getDate())}T${pad(dt.getHours())}${pad(dt.getMinutes())}00`)
+                        }
+                        if (a.notes) fields.push(`DESCRIPTION:${a.notes}`)
+                        ics = buildICS('VTODO', fields)
+                      }
+                      window.location.href = `data:text/calendar;charset=utf8,${encodeURIComponent(ics)}`
                     }
                     return (
                       <div key={i} className="action-card">
