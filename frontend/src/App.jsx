@@ -173,16 +173,16 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
               <div className="su-usage-row" key={key}>
                 <div className="su-usage-head">
                   <span className="su-usage-label">{w.label}</span>
-                  <span className="su-usage-pct">{Math.round((w.utilization ?? 0) * 100)}%</span>
+                  <span className="su-usage-pct">{Math.round(w.utilization ?? 0)}%</span>
                 </div>
                 <div className="su-bar-track">
-                  <div className="su-bar-fill" style={{ width: `${Math.round((w.utilization ?? 0) * 100)}%` }} />
+                  <div className="su-bar-fill" style={{ width: `${Math.min(Math.round(w.utilization ?? 0), 100)}%` }} />
                 </div>
                 {w.resets_at && <div className="su-reset-time">{fmtReset(w.resets_at)}</div>}
               </div>
             ))}
-            {claudeUsage.extra_usage != null && (
-              <div className="su-extra">Extra Usage: ${(claudeUsage.extra_usage / 100).toFixed(2)} / $100 本月</div>
+            {claudeUsage.extra_usage?.is_enabled && (
+              <div className="su-extra">超量用量：${((claudeUsage.extra_usage.used_credits || 0) / 100).toFixed(2)} / ${((claudeUsage.extra_usage.monthly_limit || 0) / 100).toFixed(0)} 本月</div>
             )}
           </div>
         )}
@@ -1099,7 +1099,7 @@ function Home({ dark, setDark, setTraceModal }) {
             {pokeTrace && pokeTrace.length > 0 && setTraceModal && (
               <button className="trace-btn" style={{ marginBottom: '6px' }} onClick={() => setTraceModal(pokeTrace)}>
                 <span className="trace-btn-icon">✦</span>
-                <span>思考链</span>
+                <span>Thinking...</span>
               </button>
             )}
             <div className="home-poke-msg">{pokeMsg}</div>
@@ -1553,7 +1553,7 @@ export default function App() {
                   {m.role === 'assistant' && m.trace && m.trace.length > 0 && (
                     <button className="trace-btn" onClick={() => setTraceModal(m.trace)}>
                       <span className="trace-btn-icon">✦</span>
-                      <span>思考链</span>
+                      <span>Thinking...</span>
                     </button>
                   )}
                   <div className={`msg ${m.role}`}>
@@ -1662,7 +1662,7 @@ export default function App() {
         <div className="trace-modal-overlay" onClick={() => setTraceModal(null)}>
           <div className="trace-modal" onClick={e => e.stopPropagation()}>
             <div className="trace-modal-header">
-              <span className="trace-modal-title">✦ Thought process</span>
+              <span className="trace-modal-title">✦ Thinking Process</span>
               <button className="trace-modal-close" onClick={() => setTraceModal(null)}>×</button>
             </div>
             <div className="trace-modal-body">
