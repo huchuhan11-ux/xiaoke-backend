@@ -30,7 +30,7 @@ function getClaudeOAuth() {
     if (oauth.accessToken) return oauth
   } catch {}
   // Try macOS Keychain with different service names
-  const keychainServices = ['claude-code-credentials', 'claude-ai-credentials', 'anthropic-claude']
+  const keychainServices = ['Claude Code-credentials', 'claude-code-credentials', 'claude-ai-credentials', 'anthropic-claude']
   for (const svc of keychainServices) {
     try {
       const { execSync } = require('child_process')
