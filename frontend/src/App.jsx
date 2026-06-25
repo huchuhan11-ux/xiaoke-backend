@@ -196,6 +196,7 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
   }
 
   if (subview === 'connectors') {
+    const [locStatus, setLocStatus] = useState(null)
     const connectors = [
       { id: 'health', icon: '❤️', label: '健康', desc: 'iPhone 健康数据', status: 'active', note: '睡眠 · 心率 · 步数 · 周期' },
       { id: 'location', icon: '📍', label: '位置', desc: '获取当前城市', status: 'todo', note: '用于天气和问答' },
@@ -203,11 +204,22 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
       { id: 'reminders', icon: '🔔', label: '提醒', desc: '添加/查看提醒', status: 'soon', note: '即将支持' },
     ]
     const requestLocation = () => {
-      if (!navigator.geolocation) return alert('浏览器不支持定位')
+      if (!navigator.geolocation) { setLocStatus('unavailable'); return }
+      if (window.location.protocol !== 'https:') { setLocStatus('needs-https'); return }
       navigator.geolocation.getCurrentPosition(
-        pos => alert(`获取成功：${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}`),
-        () => alert('定位被拒绝，请在浏览器设置中开启')
+        pos => {
+          localStorage.setItem('userLat', pos.coords.latitude.toFixed(4))
+          localStorage.setItem('userLng', pos.coords.longitude.toFixed(4))
+          setLocStatus('granted')
+        },
+        () => setLocStatus('denied')
       )
+    }
+    const locNote = {
+      'needs-https': '需要 HTTPS 才能访问定位。在 Safari 设置中把此地址添加为受信任站点，或通过 HTTPS 域名访问。',
+      'denied': '定位被拒绝，请在 Safari 设置 → 隐私 → 定位服务中开启。',
+      'granted': '已获取位置，天气和问答会使用当前城市。',
+      'unavailable': '此浏览器不支持定位。',
     }
     return (
       <div className="prefs-page">
@@ -215,15 +227,25 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
         <div className="prefs-title">连接器</div>
         <div className="conn-list">
           {connectors.map(c => (
-            <div key={c.id} className={`conn-row ${c.status}`}>
+            <div key={c.id} className={`conn-row ${c.id === 'location' && locStatus === 'granted' ? 'active' : c.status}`}>
               <span className="conn-icon">{c.icon}</span>
               <div className="conn-info">
                 <div className="conn-label">{c.label} <span className="conn-desc">{c.desc}</span></div>
-                <div className="conn-note">{c.note}</div>
+                <div className="conn-note">
+                  {c.id === 'location' && locStatus ? locNote[locStatus] : c.note}
+                </div>
               </div>
-              {c.status === 'active' && <span className="conn-badge active">已连接</span>}
-              {c.status === 'todo' && <button className="conn-badge todo" onClick={c.id === 'location' ? requestLocation : undefined}>启用</button>}
-              {c.status === 'soon' && <span className="conn-badge soon">即将支持</span>}
+              {c.id === 'location' ? (
+                locStatus === 'granted'
+                  ? <span className="conn-badge active">已连接</span>
+                  : <button className="conn-badge todo" onClick={requestLocation}>启用</button>
+              ) : c.status === 'active' ? (
+                <span className="conn-badge active">已连接</span>
+              ) : c.status === 'todo' ? (
+                <button className="conn-badge todo">启用</button>
+              ) : (
+                <span className="conn-badge soon">即将支持</span>
+              )}
             </div>
           ))}
         </div>
@@ -1220,6 +1242,7 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [thinkDone, setThinkDone] = useState(null)
   const thinkStartRef = useRef(null)
+  const lastChatActivityRef = useRef(Date.now())
   const [bgImage, setBgImage] = useState(() => localStorage.getItem('chatBg') || '')
   const [openTraces, setOpenTraces] = useState(() => new Set())
   const [traceModal, setTraceModal] = useState(null)
@@ -1248,6 +1271,7 @@ export default function App() {
     } catch { setPlayingId(null) }
   }
   const bottomRef = useRef(null)
+  const messagesRef = useRef(null)
   const bgInputRef = useRef(null)
   const fileInputRef = useRef(null)
   const [attachment, setAttachment] = useState(null)
@@ -1353,6 +1377,16 @@ export default function App() {
 
   useEffect(() => {
     loadSessions()
+    // Session timeout: 30 min → new conversation
+    const lastActive = localStorage.getItem('lastActive')
+    if (lastActive && Date.now() - Number(lastActive) > 30 * 60 * 1000) {
+      const newId = Date.now().toString()
+      localStorage.setItem('sessionId', newId)
+      setSessionId(newId)
+    }
+    localStorage.setItem('lastActive', String(Date.now()))
+    const interval = setInterval(() => localStorage.setItem('lastActive', String(Date.now())), 60000)
+    return () => clearInterval(interval)
   }, [])
 
   useEffect(() => {
@@ -1376,8 +1410,18 @@ export default function App() {
   }, [sessionId])
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const el = messagesRef.current
+    if (el) el.scrollTop = el.scrollHeight
   }, [messages])
+
+  useEffect(() => {
+    if (view === 'chat') {
+      setTimeout(() => {
+        const el = messagesRef.current
+        if (el) el.scrollTop = el.scrollHeight
+      }, 50)
+    }
+  }, [view])
 
   const handleFileAttach = (e) => {
     const file = e.target.files[0]
@@ -1446,6 +1490,7 @@ export default function App() {
     setLoading(true)
     setThinkDone(null)
     thinkStartRef.current = Date.now()
+    lastChatActivityRef.current = Date.now()
     const history = [...base, userMsg]
       .filter(m => m.role === 'user' || m.role === 'assistant')
       .map(m => ({ role: m.role, content: m.content }))
@@ -1556,7 +1601,7 @@ export default function App() {
               {bgImage && <button className="chat-bg-clear" onClick={() => { setBgImage(''); localStorage.removeItem('chatBg') }}>✕</button>}
               <input ref={bgInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleBgUpload} />
             </div>
-            <div className="messages" style={bgImage ? { background: 'transparent' } : {}}>
+            <div className="messages" ref={messagesRef} style={bgImage ? { background: 'transparent' } : {}}>
               {messages.map(m => (
                 (m.content?.trim() || m.trace?.length || m.role === 'user') ? (
                 <div key={m.id} className="msg-group">
@@ -1670,10 +1715,13 @@ export default function App() {
           <div key={n.id} className={`tab-item ${view === n.id ? 'active' : ''}`}
             onClick={() => {
               if (n.id === 'chat' && view !== 'chat') {
-                const newId = `session_${Date.now()}`
-                setSessionId(newId)
-                localStorage.setItem('sessionId', newId)
-                setMessages(INIT)
+                const idleMs = Date.now() - lastChatActivityRef.current
+                if (idleMs > 30 * 60 * 1000) {
+                  const newId = `session_${Date.now()}`
+                  setSessionId(newId)
+                  localStorage.setItem('sessionId', newId)
+                  setMessages(INIT)
+                }
               }
               setView(n.id)
             }}>

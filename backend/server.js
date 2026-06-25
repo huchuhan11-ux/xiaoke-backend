@@ -194,7 +194,7 @@ function makeTraceSplitter(onText, onTrace) {
     buffer += chunk
     const closeIdx = buffer.indexOf('</trace>')
     if (closeIdx === -1) {
-      if (buffer.length > 500) { resolved = true; onText(buffer); buffer = '' }
+      if (buffer.length > 6000) { resolved = true; onText(buffer); buffer = '' }
       return
     }
     const openIdx = buffer.indexOf('<trace>')
@@ -445,6 +445,7 @@ app.post('/api/chat', async (req, res) => {
     const prefsPrompt = buildPrefsPrompt(preferences)
     const fullContent = await streamClaude(transcript, memoryCache + TRACE_INSTRUCTION + context + prefsPrompt, splitter, model)
     const { trace, body } = extractTrace(fullContent)
+    console.log('TRACE:', trace ? `yes (${(trace[0] || '').slice(0, 60)}...)` : 'null — model skipped trace')
     await insertMessageSafe({ session_id, role: 'assistant', content: body, trace })
     res.write('data: [DONE]\n\n')
     res.end()
