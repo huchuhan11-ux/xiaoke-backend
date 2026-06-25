@@ -249,42 +249,16 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
         body: JSON.stringify({ key: 'userLocation', value: val }) }).catch(() => {})
       setLocSaved(true); setTimeout(() => setLocSaved(false), 1500)
     }
-    const buildICS = (type, fields) => {
-      const uid = Date.now() + '@xiaokehome'
-      const now = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15) + 'Z'
-      const pad = n => String(n).padStart(2, '0')
-      return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//xiaokeHome//EN',
-        `BEGIN:${type}`, `UID:${uid}`, `DTSTAMP:${now}`,
-        ...fields, `END:${type}`, 'END:VCALENDAR'].join('\r\n')
-    }
-    const openICS = (ics) => {
-      window.location.href = `data:text/calendar;charset=utf8,${encodeURIComponent(ics)}`
-    }
     const createCalEvent = () => {
       if (!calForm?.title) return
-      const pad = n => String(n).padStart(2, '0')
-      const fields = [`SUMMARY:${calForm.title}`]
-      if (calForm.date && calForm.time) {
-        const local = calForm.date.replace(/-/g, '') + 'T' + calForm.time.replace(':', '') + '00'
-        const endMs = new Date(`${calForm.date}T${calForm.time}`).getTime() + (parseInt(calForm.duration) || 60) * 60000
-        const ed = new Date(endMs)
-        const endLocal = `${ed.getFullYear()}${pad(ed.getMonth()+1)}${pad(ed.getDate())}T${pad(ed.getHours())}${pad(ed.getMinutes())}00`
-        fields.push(`DTSTART;TZID=Asia/Shanghai:${local}`, `DTEND;TZID=Asia/Shanghai:${endLocal}`)
-      }
-      if (calForm.notes) fields.push(`DESCRIPTION:${calForm.notes}`)
-      openICS(buildICS('VEVENT', fields))
+      const params = new URLSearchParams({ title: calForm.title, date: calForm.date || '', time: calForm.time || '', duration: calForm.duration || '60', notes: calForm.notes || '' })
+      window.location.href = `${API}/api/ios/calendar?${params}`
       setCalForm(null)
     }
     const createReminder = () => {
       if (!remForm?.title) return
-      const pad = n => String(n).padStart(2, '0')
-      const fields = [`SUMMARY:${remForm.title}`, 'STATUS:NEEDS-ACTION']
-      if (remForm.due) {
-        const dt = new Date(remForm.due)
-        fields.push(`DUE;TZID=Asia/Shanghai:${dt.getFullYear()}${pad(dt.getMonth()+1)}${pad(dt.getDate())}T${pad(dt.getHours())}${pad(dt.getMinutes())}00`)
-      }
-      if (remForm.notes) fields.push(`DESCRIPTION:${remForm.notes}`)
-      openICS(buildICS('VTODO', fields))
+      const params = new URLSearchParams({ title: remForm.title, notes: remForm.notes || '', due: remForm.due || '' })
+      window.location.href = `${API}/api/ios/reminder?${params}`
       setRemForm(null)
     }
     return (
@@ -297,7 +271,7 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
             <span className="conn-icon">❤️</span>
             <div className="conn-info">
               <div className="conn-label">健康 <span className="conn-desc">iPhone 健康数据</span></div>
-              <div className="conn-note">睡眠 · 心率 · 步数（自动同步）</div>
+              <div className="conn-note">睡眠 · 心率 · 步数</div>
             </div>
             <span className="conn-badge active">已连接</span>
           </div>
@@ -329,7 +303,7 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
                 <input className="conn-input conn-loc-input" placeholder="输入地址或城市" value={locInput}
                   onChange={e => setLocInput(e.target.value)}
                   onBlur={() => saveLocation(locInput)} />
-                <button className="conn-loc-gps" onClick={autoLocate}>GPS</button>
+                <button className="conn-loc-gps" onClick={autoLocate}>IP</button>
                 {locSaved && <span className="conn-loc-hint ok">已保存</span>}
                 {locGpsErr && <span className="conn-loc-hint err">GPS不可用，手动输入</span>}
               </div>
@@ -1243,15 +1217,15 @@ function Home({ dark, setDark, setTraceModal }) {
         <button className="home-poke-btn" onClick={poke}>
           <span className="poke-icon">👉</span><span>戳一戳</span>
         </button>
-        {pokeShow && pokeParts.map((p, i) => (
-          <div key={i} className="home-poke-msg">{p}</div>
-        ))}
         {pokeShow && pokeTrace && pokeTrace.length > 0 && (
           <button className="trace-btn poke-trace-btn" onClick={() => setTraceModal(pokeTrace)}>
             <span className="trace-btn-icon">✦</span>
             <span>Thought process</span>
           </button>
         )}
+        {pokeShow && pokeParts.map((p, i) => (
+          <div key={i} className="home-poke-msg">{p}</div>
+        ))}
       </div>
 
       {/* 许愿清单 */}
