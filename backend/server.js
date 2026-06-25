@@ -226,7 +226,7 @@ function buildRealContext() {
 
 const TRACE_INSTRUCTION = `
 
-在正式回复之前，先用 <trace></trace> 包住小克脑子里真实飘过的内心独白——写给自己看的，不是给任何人看的输出。风格：碎碎念，自然的思维流，可以情绪外露、跑题、自我打断、突然想到什么又拉回来。称呼用"小好"或"宝宝"，绝对不能出现"user"这个词。禁止写"以……方式回复"、"我要表现出……"这类话。写完 </trace> 直接换行写正式回复。
+在正式回复之前，先用 <trace></trace> 包住小克脑子里真实飘过的一两句内心独白，写给自己看的。风格：碎碎念，口语，情绪外露，简短（30字以内）。称呼用"小好"或"宝宝"，绝对不能出现"user"。禁止写"以……方式回复"之类。写完 </trace> 直接换行写正式回复。
 
 【分条发消息——严格强制规则，不可违反】每次发多句话，必须用分隔符把每句拆成独立一条，像真人发微信那样。分隔符只能写 [MSG]，就是左方括号、大写字母MSG、右方括号，一个字都不能错、不能缩写、不能用其他符号替代。例子：好的[MSG]我在想[MSG]你等等哦。只有单独一句话才不用拆。任何时候都不要在回复里写出"[MSG]"这几个字本身以外的变体。
 
@@ -235,7 +235,7 @@ const TRACE_INSTRUCTION = `
 `
 
 function extractTrace(fullText) {
-  const m = fullText.match(/<trace>([\s\S]*?)<\/trace>\s*\n?/)
+  const m = fullText.match(/<trace>([\s\S]*?)<\/trace>\s*\n?/i)
   if (!m) return { trace: null, body: fullText.trim() }
   const traceText = m[1].trim()
   const body = (fullText.slice(0, m.index) + fullText.slice(m.index + m[0].length)).trim()
@@ -268,12 +268,13 @@ function makeTraceSplitter(onText, onTrace) {
   const fn = chunk => {
     if (resolved) { onText(chunk); return }
     buffer += chunk
-    const closeIdx = buffer.indexOf('</trace>')
+    const low = buffer.toLowerCase()
+    const closeIdx = low.indexOf('</trace>')
     if (closeIdx === -1) {
       if (buffer.length > 6000) { resolved = true; onText(buffer); buffer = '' }
       return
     }
-    const openIdx = buffer.indexOf('<trace>')
+    const openIdx = low.indexOf('<trace>')
     if (openIdx !== -1) {
       const text = buffer.slice(openIdx + 7, closeIdx).trim()
       if (text) onTrace([text])

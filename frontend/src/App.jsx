@@ -92,8 +92,6 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
   const [locInput, setLocInput] = useState(() => localStorage.getItem('locText') || '')
   const [locSaved, setLocSaved] = useState(false)
   const [locGpsErr, setLocGpsErr] = useState(false)
-  const [sleepInput, setSleepInput] = useState('')
-  const [sleepSaved, setSleepSaved] = useState(false)
   const [calForm, setCalForm] = useState(null)
   const [remForm, setRemForm] = useState(null)
 
@@ -197,7 +195,6 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
           <div className="su-section">
             <div className="su-plan-header">
               <span className="su-plan-label">Plan usage</span>
-              <span className="su-plan-arrow">→</span>
             </div>
             {Object.keys(claudeUsage.windows || {}).length === 0
               ? <div className="su-reset-time" style={{ padding: '8px 0' }}>暂无用量数据（可能刚重置）</div>
@@ -252,14 +249,6 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
         body: JSON.stringify({ key: 'userLocation', value: val }) }).catch(() => {})
       setLocSaved(true); setTimeout(() => setLocSaved(false), 1500)
     }
-    const saveSleep = () => {
-      const h = parseFloat(sleepInput)
-      if (isNaN(h) || h <= 0 || h > 24) return
-      const today = new Date().toLocaleDateString('en-CA')
-      fetch(`${API}/api/health`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date: today, sleep_hours: h }) }).catch(() => {})
-      setSleepSaved(true); setTimeout(() => setSleepSaved(false), 1500)
-    }
     const buildICS = (type, fields) => {
       const uid = Date.now() + '@xiaokehome'
       const now = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15) + 'Z'
@@ -304,18 +293,13 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
         <div className="prefs-title">连接器</div>
         <div className="conn-list">
           {/* 健康 */}
-          <div className="conn-row active" style={{ alignItems: 'flex-start' }}>
+          <div className="conn-row active">
             <span className="conn-icon">❤️</span>
-            <div className="conn-info" style={{ flex: 1 }}>
+            <div className="conn-info">
               <div className="conn-label">健康 <span className="conn-desc">iPhone 健康数据</span></div>
-              <div className="conn-note">心率 · 步数 · 周期（自动）</div>
-              <div className="conn-form-row" style={{ marginTop: 6 }}>
-                <input className="conn-input" type="number" placeholder="今日睡眠小时数" min="0" max="24" step="0.5"
-                  value={sleepInput} onChange={e => setSleepInput(e.target.value)} style={{ flex: 1 }} />
-                <button className="conn-badge todo" style={{ flexShrink: 0 }} onClick={saveSleep}>记录</button>
-              </div>
-              {sleepSaved && <span style={{ fontSize: 11, color: '#7ec8a0' }}>已保存</span>}
+              <div className="conn-note">睡眠 · 心率 · 步数（自动同步）</div>
             </div>
+            <span className="conn-badge active">已连接</span>
           </div>
           {/* 位置 */}
           <div className={`conn-row-loc ${locEnabled ? 'active' : 'todo'}`}>
@@ -345,7 +329,7 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
                 <input className="conn-input conn-loc-input" placeholder="输入地址或城市" value={locInput}
                   onChange={e => setLocInput(e.target.value)}
                   onBlur={() => saveLocation(locInput)} />
-                <button className="conn-loc-gps" onClick={autoLocate}>自动</button>
+                <button className="conn-loc-gps" onClick={autoLocate}>GPS</button>
                 {locSaved && <span className="conn-loc-hint ok">已保存</span>}
                 {locGpsErr && <span className="conn-loc-hint err">GPS不可用，手动输入</span>}
               </div>
@@ -410,12 +394,12 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
           </div>
           <div className="settings-row" onClick={() => setSubview('usage')}>
             <span className="settings-row-label">用量</span>
-            <span className="settings-row-val">消息 & 记录</span>
+            <span className="settings-row-val">对话 · 计划</span>
             <span className="settings-row-arrow">›</span>
           </div>
           <div className="settings-row" onClick={() => setSubview('connectors')}>
             <span className="settings-row-label">连接器</span>
-            <span className="settings-row-val">健康 · 数据</span>
+            <span className="settings-row-val">位置 · 日历</span>
             <span className="settings-row-arrow">›</span>
           </div>
           <div className="settings-row" onClick={() => setDark(d => !d)}>
