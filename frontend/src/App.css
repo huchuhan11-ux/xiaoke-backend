@@ -105,14 +105,16 @@ html {
   display: flex;
   align-items: flex-end;
   justify-content: center;
+  padding-bottom: 48px;
   animation: fadeIn 0.18s ease;
 }
 .trace-modal {
   background: #faf6f0;
-  border-radius: 20px 20px 0 0;
-  width: 100%;
-  max-height: 82vh;
-  padding: 20px 20px calc(env(safe-area-inset-bottom, 0px) + 24px);
+  border-radius: 20px;
+  width: calc(100% - 32px);
+  min-height: 200px;
+  max-height: 72vh;
+  padding: 20px 20px 24px;
   display: flex;
   flex-direction: column;
   animation: slideUp 0.22s cubic-bezier(0.25, 0.46, 0.45, 0.94);
@@ -161,7 +163,8 @@ html {
   to { opacity: 1; }
 }
 .dark .trace-btn { color: #9a8a5a; border-color: rgba(201,162,39,0.2); background: rgba(201,162,39,0.06); }
-.dark .trace-modal { background: #1a1510; }
+.dark .trace-modal { background: #1c1612; }
+.dark .conn-input-label > span { color: #9a8a5a; }
 .dark .trace-modal-title { color: #c9a227; }
 .dark .trace-modal-body { color: #c8b89a; }
 .dark .trace-modal-close { background: rgba(201,162,39,0.1); color: #c9a227; }
@@ -1576,8 +1579,9 @@ button {
 }
 
 .poke-trace-btn {
-  margin-top: 8px;
-  align-self: center;
+  display: flex !important;
+  margin: 10px auto 0 !important;
+  align-self: auto !important;
 }
 
 .home-section {
@@ -4069,7 +4073,9 @@ button.diary-mood-btn {
   gap: 8px;
   margin: -4px 0 4px;
 }
-.conn-form-row { display: flex; gap: 8px; }
+.conn-form-row { display: flex; gap: 8px; align-items: flex-end; }
+.conn-input-label { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.conn-input-label > span { font-size: 11px; color: #a8765f; letter-spacing: 0.02em; padding-left: 2px; }
 .conn-input {
   flex: 1;
   border: 0.5px solid rgba(192,139,114,0.3);

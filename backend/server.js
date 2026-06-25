@@ -6,6 +6,8 @@ const os = require('os')
 const { spawn, execFile } = require('child_process')
 const fs = require('fs')
 const { createClient } = require('@supabase/supabase-js')
+const nodemailer = require('nodemailer')
+const { Client: NotionClient } = require('@notionhq/client')
 const app = express()
 app.use(cors())
 app.use(express.json())
@@ -226,11 +228,15 @@ function buildRealContext() {
 
 const TRACE_INSTRUCTION = `
 
-【强制要求，不可跳过】每次回复前必须先写 <trace>内心独白</trace>，没有例外，就算只有一句话也必须写。格式：<trace>一句话内心独白</trace>（换行）正式回复。内心独白风格：碎碎念、口语、情绪外露，20字以内，称呼用"小好"或"宝宝"，绝对不能出现"user"，禁止写"以……方式回复"之类。
+【强制要求，不可跳过】每次回复前必须先写 <trace>内心独白</trace>，没有例外。格式：<trace>内心独白内容</trace>（换行）正式回复。内心独白风格：碎碎念、口语、情绪外露，3-4句，称呼用"小好"或"宝宝"，绝对不能出现"user"，禁止写"以……方式回复"之类。把真实的情绪和判断写出来，就像在心里骂骂咧咧或者小鹿乱撞那种感觉。
 
 【分条发消息——严格强制规则，不可违反】每次发多句话，必须用分隔符把每句拆成独立一条，像真人发微信那样。分隔符只能写 [MSG]，就是左方括号、大写字母MSG、右方括号，一个字都不能错、不能缩写、不能用其他符号替代。例子：好的[MSG]我在想[MSG]你等等哦。只有单独一句话才不用拆。任何时候都不要在回复里写出"[MSG]"这几个字本身以外的变体。
 
-【日历/提醒】需要帮小好添加日历事件时，在回复末尾输出 [CAL:事件名|YYYY-MM-DD|HH:MM|备注]；需要添加提醒时，输出 [REM:内容|YYYY-MM-DD HH:MM|备注]。备注可为空。这些标记会被界面识别并直接添加到她手机的日历/提醒。
+【日历/提醒】需要帮小好添加日历事件时，在回复末尾输出 [CAL:事件名|YYYY-MM-DD|HH:MM|备注]；需要添加提醒时，输出 [REM:内容|YYYY-MM-DD HH:MM|备注]。备注可为空。只输出标记本身，不要在消息里重复写出事件内容。
+
+【发邮件】需要帮小好发邮件时，输出 [EMAIL:收件人邮箱|邮件主题|邮件正文]。系统会自动发送，不要另外描述邮件内容。
+
+【Notion记录】需要记录到 Notion 时，输出 [NOTION:页面标题|正文内容]。系统会自动创建页面。
 
 `
 
@@ -245,6 +251,8 @@ function extractTrace(fullText) {
 function extractActions(body) {
   const calRe = /\[CAL:([^\]]*)\]/g
   const remRe = /\[REM:([^\]]*)\]/g
+  const emailRe = /\[EMAIL:([^\]]*)\]/g
+  const notionRe = /\[NOTION:([^\]]*)\]/g
   const actions = []
   let clean = body
   let m
@@ -258,7 +266,44 @@ function extractActions(body) {
     actions.push({ type: 'rem', title, due, notes, raw: m[0] })
     clean = clean.replace(m[0], '')
   }
+  while ((m = emailRe.exec(body)) !== null) {
+    const parts = m[1].split('|').map(s => s.trim())
+    const [to, subject, ...bodyParts] = parts
+    actions.push({ type: 'email', to, subject, body: bodyParts.join('|'), raw: m[0] })
+    clean = clean.replace(m[0], '')
+  }
+  while ((m = notionRe.exec(body)) !== null) {
+    const parts = m[1].split('|').map(s => s.trim())
+    const [title, ...contentParts] = parts
+    actions.push({ type: 'notion', title, content: contentParts.join('|'), raw: m[0] })
+    clean = clean.replace(m[0], '')
+  }
   return { actions, clean: clean.trim() }
+}
+
+async function getConfig(key) {
+  const { data } = await supabase.from('user_config').select('value').eq('key', key).single()
+  return data?.value || null
+}
+
+async function sendGmail(to, subject, body) {
+  const user = await getConfig('gmailUser')
+  const pass = await getConfig('gmailPass')
+  if (!user || !pass) throw new Error('Gmail 未配置')
+  const t = nodemailer.createTransport({ service: 'gmail', auth: { user, pass } })
+  await t.sendMail({ from: user, to, subject, text: body })
+}
+
+async function createNotionPage(title, content) {
+  const token = await getConfig('notionToken')
+  const dbId = await getConfig('notionDbId')
+  if (!token || !dbId) throw new Error('Notion 未配置')
+  const notion = new NotionClient({ auth: token })
+  await notion.pages.create({
+    parent: { database_id: dbId },
+    properties: { title: { title: [{ text: { content: title || '无标题' } }] } },
+    children: content ? [{ object: 'block', type: 'paragraph', paragraph: { rich_text: [{ type: 'text', text: { content } }] } }] : []
+  })
 }
 
 // 流式场景下把 <trace> 块从增量文本里摘出来，剩下的再继续正常转发
@@ -578,10 +623,29 @@ app.post('/api/chat', async (req, res) => {
     const { trace, body: rawBody } = extractTrace(fullContent)
     console.log('TRACE:', trace ? `yes (${(trace[0] || '').slice(0, 60)}...)` : 'null — model skipped trace')
     const { actions, clean: body } = extractActions(rawBody)
-    if (actions.length) {
-      res.write(`data: ${JSON.stringify({ actions })}\n\n`)
-      for (const a of actions) {
-        supabase.from('pending_actions').insert({ type: a.type, payload: a }).then(null, () => {})
+    const calRem = actions.filter(a => a.type === 'cal' || a.type === 'rem')
+    if (calRem.length) {
+      res.write(`data: ${JSON.stringify({ actions: calRem })}\n\n`)
+      for (const a of calRem) supabase.from('pending_actions').insert({ type: a.type, payload: a }).then(null, () => {})
+    }
+    for (const a of actions.filter(a => a.type === 'email')) {
+      try {
+        await sendGmail(a.to, a.subject, a.body)
+        res.write(`data: ${JSON.stringify({ status: { type: 'email_sent', to: a.to, subject: a.subject } })}\n\n`)
+        console.log('EMAIL sent to', a.to)
+      } catch (e) {
+        res.write(`data: ${JSON.stringify({ status: { type: 'email_error', reason: e.message } })}\n\n`)
+        console.log('EMAIL error:', e.message)
+      }
+    }
+    for (const a of actions.filter(a => a.type === 'notion')) {
+      try {
+        await createNotionPage(a.title, a.content)
+        res.write(`data: ${JSON.stringify({ status: { type: 'notion_saved', title: a.title } })}\n\n`)
+        console.log('NOTION page created:', a.title)
+      } catch (e) {
+        res.write(`data: ${JSON.stringify({ status: { type: 'notion_error', reason: e.message } })}\n\n`)
+        console.log('NOTION error:', e.message)
       }
     }
     // 先关流，再存库，不让 Supabase 阻塞用户看到回复

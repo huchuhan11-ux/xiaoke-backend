@@ -94,6 +94,14 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
   const [locGpsErr, setLocGpsErr] = useState(false)
   const [calForm, setCalForm] = useState(null)
   const [remForm, setRemForm] = useState(null)
+  const [gmailUser, setGmailUser] = useState('')
+  const [gmailPass, setGmailPass] = useState('')
+  const [gmailForm, setGmailForm] = useState(false)
+  const [gmailSaved, setGmailSaved] = useState(false)
+  const [notionToken, setNotionToken] = useState('')
+  const [notionDbId, setNotionDbId] = useState('')
+  const [notionForm, setNotionForm] = useState(false)
+  const [notionSaved, setNotionSaved] = useState(false)
 
   const autoLocate = async () => {
     setLocGpsErr(false)
@@ -120,6 +128,16 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
       .then(s => setUsageData({ count: s.count ?? '—' }))
     fetch(`${API}/api/claude-usage`).then(r => r.json()).catch(() => null)
       .then(d => setClaudeUsage(d))
+  }, [subview])
+
+  useEffect(() => {
+    if (subview !== 'connectors') return
+    fetch(`${API}/api/config`).then(r => r.json()).then(cfg => {
+      if (cfg.gmailUser) setGmailUser(cfg.gmailUser)
+      if (cfg.gmailPass) setGmailPass(cfg.gmailPass)
+      if (cfg.notionToken) setNotionToken(cfg.notionToken)
+      if (cfg.notionDbId) setNotionDbId(cfg.notionDbId)
+    }).catch(() => {})
   }, [subview])
 
   // removed auto-locate on open — user controls via toggle
@@ -324,11 +342,39 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
             <div className="conn-form">
               <input className="conn-input" placeholder="事件名称" value={calForm.title} onChange={e => setCalForm(f => ({ ...f, title: e.target.value }))} />
               <div className="conn-form-row">
-                <input className="conn-input" type="date" value={calForm.date} onChange={e => setCalForm(f => ({ ...f, date: e.target.value }))} />
-                <input className="conn-input" type="time" value={calForm.time} onChange={e => setCalForm(f => ({ ...f, time: e.target.value }))} />
+                <label className="conn-input-label">
+                  <span>日期</span>
+                  <input className="conn-input" type="date" value={calForm.date} onChange={e => setCalForm(f => ({ ...f, date: e.target.value }))} />
+                </label>
+                <label className="conn-input-label">
+                  <span>时间</span>
+                  <input className="conn-input" type="time" value={calForm.time} onChange={e => setCalForm(f => ({ ...f, time: e.target.value }))} />
+                </label>
               </div>
               <input className="conn-input" placeholder="备注（可选）" value={calForm.notes} onChange={e => setCalForm(f => ({ ...f, notes: e.target.value }))} />
               <button className="conn-form-btn" onClick={createCalEvent}>添加到日历</button>
+            </div>
+          )}
+          {/* 提醒 */}
+          <div className="conn-row active">
+            <span className="conn-icon">⏰</span>
+            <div className="conn-info">
+              <div className="conn-label">提醒 <span className="conn-desc">创建提醒事项</span></div>
+              <div className="conn-note">生成 ICS 文件 → 添加到 iPhone 提醒</div>
+            </div>
+            <button className="conn-badge todo" onClick={() => setRemForm(remForm ? null : { title: '', due: '', notes: '' })}>
+              {remForm ? '取消' : '创建'}
+            </button>
+          </div>
+          {remForm && (
+            <div className="conn-form">
+              <input className="conn-input" placeholder="提醒内容" value={remForm.title} onChange={e => setRemForm(f => ({ ...f, title: e.target.value }))} />
+              <label className="conn-input-label">
+                <span>提醒时间</span>
+                <input className="conn-input" type="datetime-local" value={remForm.due} onChange={e => setRemForm(f => ({ ...f, due: e.target.value }))} />
+              </label>
+              <input className="conn-input" placeholder="备注（可选）" value={remForm.notes} onChange={e => setRemForm(f => ({ ...f, notes: e.target.value }))} />
+              <button className="conn-form-btn" onClick={createReminder}>添加到提醒</button>
             </div>
           )}
           {/* Notion */}
@@ -336,19 +382,49 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
             <span className="conn-icon">📓</span>
             <div className="conn-info">
               <div className="conn-label">Notion <span className="conn-desc">笔记和数据库</span></div>
-              <div className="conn-note">读取和写入 Notion 页面</div>
+              <div className="conn-note">{notionToken && notionDbId ? '小克可以自动记录到 Notion' : '配置后小克可写 Notion'}</div>
             </div>
-            <span className="conn-badge todo">即将支持</span>
+            <button className="conn-badge todo" onClick={() => setNotionForm(f => !f)}>
+              {notionToken && notionDbId ? '已配置' : '配置'}
+            </button>
           </div>
+          {notionForm && (
+            <div className="conn-form">
+              <input className="conn-input" placeholder="Integration Token (secret_...)" value={notionToken} onChange={e => setNotionToken(e.target.value)} />
+              <input className="conn-input" placeholder="Database ID" value={notionDbId} onChange={e => setNotionDbId(e.target.value)} />
+              <button className="conn-form-btn" onClick={() => {
+                const saveKey = (k, v) => fetch(`${API}/api/config`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: k, value: v }) }).catch(() => {})
+                saveKey('notionToken', notionToken)
+                saveKey('notionDbId', notionDbId)
+                setNotionSaved(true); setTimeout(() => setNotionSaved(false), 1500)
+                setNotionForm(false)
+              }}>{notionSaved ? '已保存 ✓' : '保存'}</button>
+            </div>
+          )}
           {/* Gmail */}
           <div className="conn-row todo">
             <span className="conn-icon">✉️</span>
             <div className="conn-info">
-              <div className="conn-label">Gmail <span className="conn-desc">邮件</span></div>
-              <div className="conn-note">查看和发送邮件</div>
+              <div className="conn-label">Gmail <span className="conn-desc">发送邮件</span></div>
+              <div className="conn-note">{gmailUser && gmailPass ? `${gmailUser}` : '配置后小克可代发邮件'}</div>
             </div>
-            <span className="conn-badge todo">即将支持</span>
+            <button className="conn-badge todo" onClick={() => setGmailForm(f => !f)}>
+              {gmailUser && gmailPass ? '已配置' : '配置'}
+            </button>
           </div>
+          {gmailForm && (
+            <div className="conn-form">
+              <input className="conn-input" placeholder="Gmail 地址" type="email" value={gmailUser} onChange={e => setGmailUser(e.target.value)} />
+              <input className="conn-input" placeholder="应用专用密码 (App Password)" type="password" value={gmailPass} onChange={e => setGmailPass(e.target.value)} />
+              <button className="conn-form-btn" onClick={() => {
+                const saveKey = (k, v) => fetch(`${API}/api/config`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: k, value: v }) }).catch(() => {})
+                saveKey('gmailUser', gmailUser)
+                saveKey('gmailPass', gmailPass)
+                setGmailSaved(true); setTimeout(() => setGmailSaved(false), 1500)
+                setGmailForm(false)
+              }}>{gmailSaved ? '已保存 ✓' : '保存'}</button>
+            </div>
+          )}
         </div>
       </div>
     )
@@ -1503,7 +1579,19 @@ export default function App() {
             }
             return [{ id: m.id, role: m.role, content: parts[0] ?? m.content, trace: m.trace || null, ts: m.created_at ? new Date(m.created_at).getTime() : null }]
           })
-          setMessages([...INIT, ...loaded])
+          // compute thinkSecs from timestamp gap between user msg and assistant reply
+          const withSecs = loaded.map((msg, idx) => {
+            if (msg.role !== 'assistant' || !msg.trace || !msg.ts) return msg
+            for (let j = idx - 1; j >= 0; j--) {
+              if (loaded[j].role === 'user' && loaded[j].ts) {
+                const s = Math.round((msg.ts - loaded[j].ts) / 1000)
+                if (s > 0 && s < 300) return { ...msg, thinkSecs: s }
+                break
+              }
+            }
+            return msg
+          })
+          setMessages([...INIT, ...withSecs])
         } else {
           setMessages(INIT)
         }
@@ -1628,8 +1716,10 @@ export default function App() {
               const payload = JSON.parse(line.slice(6))
               if (payload.trace) {
                 aiMsg = { ...aiMsg, trace: payload.trace }
+              } else if (payload.status) {
+                setPendingActions(prev => [...prev, { type: 'status', ...payload.status }])
               } else if (payload.actions) {
-                setPendingActions(payload.actions)
+                setPendingActions(prev => [...prev, ...payload.actions])
               } else {
                 rawContent += payload.text
                 aiMsg = { ...aiMsg, content: rawContent.replace(/\[MSG?\]|\[M[A-Z]*G\]/g, '').replace(/^\s+/, '') }
@@ -1723,7 +1813,7 @@ export default function App() {
                     <div className={`bubble ${bgImage ? 'bubble-bg' : ''}`}>
                       {m.attachment?.isImage && <img className="msg-img" src={m.attachment.data} alt={m.attachment.name} />}
                       {m.attachment && !m.attachment.isImage && <div className="msg-file-chip">📎 {m.attachment.name}</div>}
-                      {m.content && !m.content.startsWith('[图片:') && !m.content.startsWith('[文件:') ? m.content.replace(/\[MSG?\]|\[M[A-Z]*G\]/g, '') : (!m.attachment ? m.content : null)}
+                      {m.content && !m.content.startsWith('[图片:') && !m.content.startsWith('[文件:') ? m.content.replace(/\[MSG?\]|\[M[A-Z]*G\]/g, '').replace(/\[(?:CAL|REM|EMAIL|NOTION):[^\]]*\]/g, '').trim() : (!m.attachment ? m.content : null)}
                     </div>
                   </div>
                   {m.id !== 1 && (
@@ -1763,38 +1853,30 @@ export default function App() {
               {pendingActions.length > 0 && (
                 <div className="action-cards">
                   {pendingActions.map((a, i) => {
+                    const dismiss = () => setPendingActions(prev => prev.filter((_, j) => j !== i))
+                    if (a.type === 'status') {
+                      const icon = a.type === 'email_sent' ? '✉️' : a.type === 'notion_saved' ? '📓' : a.type === 'email_error' ? '⚠️' : '⚠️'
+                      const label = a.type === 'email_sent' ? `邮件已发送至 ${a.to}` : a.type === 'notion_saved' ? `已记录到 Notion` : a.type === 'email_error' ? `邮件发送失败` : `Notion 写入失败`
+                      return (
+                        <div key={i} className="action-card">
+                          <span className="action-card-icon">{icon}</span>
+                          <div className="action-card-body">
+                            <div className="action-card-title">{label}</div>
+                            {(a.subject || a.title || a.reason) && <div className="action-card-sub">{a.subject || a.title || a.reason}</div>}
+                          </div>
+                          <button className="action-card-close" onClick={dismiss}>✕</button>
+                        </div>
+                      )
+                    }
                     const isCal = a.type === 'cal'
                     const openICS = () => {
-                      const pad = n => String(n).padStart(2, '0')
-                      const buildICS = (type, fields) => {
-                        const uid = Date.now() + '@xiaokehome'
-                        const now = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15) + 'Z'
-                        return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//xiaokeHome//EN',
-                          `BEGIN:${type}`, `UID:${uid}`, `DTSTAMP:${now}`,
-                          ...fields, `END:${type}`, 'END:VCALENDAR'].join('\r\n')
-                      }
-                      let ics
                       if (isCal) {
-                        const fields = [`SUMMARY:${a.title}`]
-                        if (a.date && a.time) {
-                          const local = a.date.replace(/-/g, '') + 'T' + a.time.replace(':', '') + '00'
-                          const endMs = new Date(`${a.date}T${a.time}`).getTime() + 60 * 60000
-                          const ed = new Date(endMs)
-                          const endLocal = `${ed.getFullYear()}${pad(ed.getMonth()+1)}${pad(ed.getDate())}T${pad(ed.getHours())}${pad(ed.getMinutes())}00`
-                          fields.push(`DTSTART;TZID=Asia/Shanghai:${local}`, `DTEND;TZID=Asia/Shanghai:${endLocal}`)
-                        }
-                        if (a.notes) fields.push(`DESCRIPTION:${a.notes}`)
-                        ics = buildICS('VEVENT', fields)
+                        const params = new URLSearchParams({ title: a.title, date: a.date || '', time: a.time || '', duration: '60', notes: a.notes || '' })
+                        window.location.href = `${API}/api/ios/calendar?${params}`
                       } else {
-                        const fields = [`SUMMARY:${a.title}`, 'STATUS:NEEDS-ACTION']
-                        if (a.due) {
-                          const dt = new Date(a.due)
-                          fields.push(`DUE;TZID=Asia/Shanghai:${dt.getFullYear()}${pad(dt.getMonth()+1)}${pad(dt.getDate())}T${pad(dt.getHours())}${pad(dt.getMinutes())}00`)
-                        }
-                        if (a.notes) fields.push(`DESCRIPTION:${a.notes}`)
-                        ics = buildICS('VTODO', fields)
+                        const params = new URLSearchParams({ title: a.title, notes: a.notes || '', due: a.due || '' })
+                        window.location.href = `${API}/api/ios/reminder?${params}`
                       }
-                      window.location.href = `data:text/calendar;charset=utf8,${encodeURIComponent(ics)}`
                     }
                     return (
                       <div key={i} className="action-card">
@@ -1806,7 +1888,7 @@ export default function App() {
                         <button className="action-card-btn" onClick={openICS}>
                           {isCal ? '加入日历' : '添加提醒'}
                         </button>
-                        <button className="action-card-close" onClick={() => setPendingActions(prev => prev.filter((_, j) => j !== i))}>✕</button>
+                        <button className="action-card-close" onClick={dismiss}>✕</button>
                       </div>
                     )
                   })}
