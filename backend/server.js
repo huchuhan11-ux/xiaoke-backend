@@ -63,10 +63,11 @@ async function refreshOAuthToken() {
   try { fullCreds = JSON.parse(rawCreds) } catch { return false }
   const oauth = fullCreds?.claudeAiOauth
   if (!oauth?.refreshToken) return false
-  const refreshBody = JSON.stringify({ grant_type: 'refresh_token', refresh_token: oauth.refreshToken })
+  // OAuth standard: token endpoint requires application/x-www-form-urlencoded, NOT JSON
+  const refreshBody = `grant_type=refresh_token&refresh_token=${encodeURIComponent(oauth.refreshToken)}`
   const proxy = 'http://127.0.0.1:6952'
   const tryRefresh = (useProxy) => {
-    const args = ['-s', '-X', 'POST', '-H', 'Content-Type: application/json', '-d', refreshBody]
+    const args = ['-s', '-X', 'POST', '-H', 'Content-Type: application/x-www-form-urlencoded', '-d', refreshBody]
     if (useProxy) args.push('-x', proxy)
     args.push('--max-time', '15', 'https://platform.claude.com/v1/oauth/token')
     return execFileSync('curl', args, { encoding: 'utf8', timeout: 20000 })
@@ -558,18 +559,24 @@ app.get('/api/ios/calendar', (req, res) => {
 })
 
 app.get('/api/ios/reminder', (req, res) => {
+  // iOS Safari can't open VTODO — use VEVENT+VALARM so it opens in Calendar with a notification
   const { title = '提醒', notes = '', due } = req.query
-  const fields = [`SUMMARY:${title}`, 'STATUS:NEEDS-ACTION']
+  const pad = n => String(n).padStart(2, '0')
+  const fields = [`SUMMARY:${title}`]
   if (due) {
-    const pad = n => String(n).padStart(2, '0')
     const dt = new Date(due)
     const local = `${dt.getFullYear()}${pad(dt.getMonth()+1)}${pad(dt.getDate())}T${pad(dt.getHours())}${pad(dt.getMinutes())}00`
-    fields.push(`DUE;TZID=Asia/Shanghai:${local}`)
+    const endMs = dt.getTime() + 60000 // 1-minute event
+    const ed = new Date(endMs)
+    const endLocal = `${ed.getFullYear()}${pad(ed.getMonth()+1)}${pad(ed.getDate())}T${pad(ed.getHours())}${pad(ed.getMinutes())}00`
+    fields.push(`DTSTART;TZID=Asia/Shanghai:${local}`, `DTEND;TZID=Asia/Shanghai:${endLocal}`)
   }
   if (notes) fields.push(`DESCRIPTION:${notes}`)
+  // VALARM triggers notification at event start time
+  fields.push('BEGIN:VALARM', 'TRIGGER:PT0S', 'ACTION:DISPLAY', `DESCRIPTION:${title}`, 'END:VALARM')
   res.setHeader('Content-Type', 'text/calendar; charset=utf-8')
-  res.setHeader('Content-Disposition', 'inline; filename="reminder.ics"')
-  res.send(makeICS('VTODO', fields))
+  res.setHeader('Content-Disposition', 'attachment; filename="reminder.ics"')
+  res.send(makeICS('VEVENT', fields))
 })
 
 app.get('/api/weather', async (req, res) => {

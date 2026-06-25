@@ -716,6 +716,7 @@ function Records() {
   const [todos, setTodos] = useState([])
   const [todoInput, setTodoInput] = useState('')
   const [todoSuggesting, setTodoSuggesting] = useState(false)
+  const [expandedDates, setExpandedDates] = useState({})
 
   const load = async () => {
     const [diary, letters] = await Promise.all([
@@ -794,7 +795,7 @@ function Records() {
     return (
       <div className="journal">
         <div className="records-detail-wrap">
-          <button className="records-back-btn" onClick={() => setDetailEntry(null)}>← 返回</button>
+          <button className="records-back-btn" onClick={() => setDetailEntry(null)}>‹ 返回</button>
           <JournalCard entry={detailEntry} expanded={true} onToggle={() => {}} onReplySubmit={handleReplySubmit} />
         </div>
       </div>
@@ -834,7 +835,7 @@ function Records() {
       <div className="journal" style={{ display: 'flex', flexDirection: 'column' }}>
         <div className="records-detail-wrap" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <div className="records-section-nav">
-            <button className="records-back-btn" style={{ padding: '10px 0 0' }} onClick={() => setActiveSection(null)}>←</button>
+            <button className="records-back-btn" onClick={() => setActiveSection(null)}>‹ 记录</button>
             <span className="records-nav-title">记忆库</span>
             <button className="memory-summarize-btn" onClick={summarize} disabled={memSummarizing}>
               {memSummarizing ? '总结中…' : '让小克总结'}
@@ -903,26 +904,61 @@ function Records() {
       } catch {}
       setTodoSuggesting(false)
     }
+    const todayISO = new Date().toISOString().slice(0, 10)
+    const groupedTodos = {}
+    todos.forEach(t => {
+      const dk = (t.created_at || '').slice(0, 10) || todayISO
+      if (!groupedTodos[dk]) groupedTodos[dk] = []
+      groupedTodos[dk].push(t)
+    })
+    if (!groupedTodos[todayISO]) groupedTodos[todayISO] = []
+    const sortedDates = Object.keys(groupedTodos).sort((a, b) => b.localeCompare(a))
+    const fmtDate = (dk) => {
+      if (dk === todayISO) return '今天'
+      const d = new Date(dk + 'T12:00:00')
+      return `${d.getMonth() + 1}月${d.getDate()}日`
+    }
+    const toggleDate = (dk) => setExpandedDates(prev => ({ ...prev, [dk]: !prev[dk] }))
+
     return (
       <div className="journal" style={{ display: 'flex', flexDirection: 'column' }}>
         <div className="records-detail-wrap" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <div className="records-section-nav">
-            <button className="records-back-btn" style={{ padding: '10px 0 0' }} onClick={() => setActiveSection(null)}>←</button>
+            <button className="records-back-btn" onClick={() => setActiveSection(null)}>‹ 记录</button>
             <span className="records-nav-title">每日清单</span>
             <button className="todo-suggest-btn" onClick={suggestTodo} disabled={todoSuggesting}>
               {todoSuggesting ? '思考中' : '小克来一条'}
             </button>
           </div>
           <div className="todo-list" style={{ flex: 1, overflowY: 'auto' }}>
-            {todos.length === 0 && <div className="records-empty-sm">还没有清单</div>}
-            {todos.map(t => (
-              <div key={t.id} className="todo-item">
-                <button className={`todo-check${t.done ? ' done' : ''}`} onClick={() => toggleTodo(t.id)}>✓</button>
-                <span className={`todo-text${t.done ? ' done' : ''}`}>{t.content}</span>
-                {t.role === 'ai' && <span className="todo-role-ai">小克</span>}
-                <button className="todo-del" onClick={() => delTodo(t.id)}>×</button>
-              </div>
-            ))}
+            {sortedDates.map(dk => {
+              const isToday = dk === todayISO
+              const isOpen = isToday || expandedDates[dk] === true
+              const items = groupedTodos[dk]
+              const doneCount = items.filter(t => t.done).length
+              return (
+                <div key={dk} className="todo-day-group">
+                  <div className={`todo-day-header${!isToday ? ' clickable' : ''}`} onClick={!isToday ? () => toggleDate(dk) : undefined}>
+                    <span className="todo-day-label">{fmtDate(dk)}</span>
+                    {items.length > 0 && <span className="todo-day-stats">{doneCount}/{items.length}</span>}
+                    {!isToday && <span className="todo-day-arrow">{isOpen ? '▾' : '▸'}</span>}
+                  </div>
+                  {isOpen && (
+                    <div className="todo-day-items">
+                      {items.length === 0 && isToday && <div className="records-empty-sm" style={{ paddingBottom: 8 }}>今天还没有清单</div>}
+                      {items.map(t => (
+                        <div key={t.id} className="todo-item">
+                          <button className={`todo-check${t.done ? ' done' : ''}`} onClick={() => toggleTodo(t.id)}>✓</button>
+                          <span className={`todo-text${t.done ? ' done' : ''}`}>{t.content}</span>
+                          {t.role === 'ai' && <span className="todo-role-ai">小克</span>}
+                          <button className="todo-del" onClick={() => delTodo(t.id)}>×</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
         <div className="todo-compose-bar">
@@ -947,7 +983,7 @@ function Records() {
       <div className="journal">
         <div className="records-detail-wrap">
           <div className="records-section-nav">
-            <button className="records-back-btn" style={{ padding: '10px 0 0' }} onClick={() => setActiveSection(null)}>←</button>
+            <button className="records-back-btn" onClick={() => setActiveSection(null)}>‹ 记录</button>
             <span className="records-nav-title">{isLetter ? '信' : '日记'}</span>
             {isLetter && (
               <button className="jbar-mail" style={{ marginLeft: 'auto' }} onClick={generateLetter} disabled={generating}>
@@ -1610,6 +1646,14 @@ export default function App() {
         const el = messagesRef.current
         if (el) el.scrollTop = el.scrollHeight
       }, 50)
+      // Session timeout: if away 30+ min, start a new conversation
+      const lastActive = localStorage.getItem('lastActive')
+      if (lastActive && Date.now() - Number(lastActive) > 30 * 60 * 1000) {
+        const newId = Date.now().toString()
+        localStorage.setItem('sessionId', newId)
+        setSessionId(newId)
+        loadSessions()
+      }
     }
   }, [view])
 

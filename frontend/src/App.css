@@ -572,10 +572,9 @@ html {
   border-top: 1px solid rgba(192, 139, 114, 0.15) !important;
   display: flex !important;
   flex-direction: row !important;
-  align-items: flex-start !important;
+  align-items: center !important;
   justify-content: space-around !important;
   z-index: 999 !important;
-  padding-top: 0 !important;
   padding-bottom: env(safe-area-inset-bottom, 0px) !important;
 }
 
@@ -3463,12 +3462,16 @@ button.diary-mood-btn {
   background: none;
   border: none;
   color: #c08b72;
-  font-size: 14px;
+  font-size: 15px;
   font-family: inherit;
-  padding: 10px 0 16px;
+  padding: 6px 0;
   cursor: pointer;
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 2px;
   -webkit-tap-highlight-color: transparent;
+  flex-shrink: 0;
+  z-index: 1;
 }
 
 .dark .records-row-date { color: #7a6a4a; }
@@ -3585,14 +3588,19 @@ button.diary-mood-btn {
 .records-section-nav {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+  padding: 4px 16px 16px;
+  flex-shrink: 0;
+  position: relative;
 }
 
 .records-nav-title {
-  font-size: 18px;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 16px;
   font-weight: 600;
   color: #4a3728;
+  pointer-events: none;
 }
 
 /* ── 记忆库 ── */
@@ -3807,6 +3815,23 @@ button.diary-mood-btn {
 .todo-del {
   background: none; border: none; color: rgba(192,139,114,0.45); font-size: 16px; cursor: pointer; padding: 0; flex-shrink: 0;
 }
+
+.todo-day-group { margin-bottom: 4px; }
+.todo-day-header {
+  display: flex; align-items: center; gap: 7px;
+  padding: 10px 0 6px; cursor: default;
+}
+.todo-day-header.clickable { cursor: pointer; }
+.todo-day-label { font-size: 11.5px; font-weight: 600; color: #a8765f; letter-spacing: 0.03em; }
+.todo-day-stats {
+  font-size: 10.5px; color: rgba(168,118,95,0.65);
+  background: rgba(192,139,114,0.1); padding: 1px 6px; border-radius: 8px;
+}
+.todo-day-arrow { font-size: 10px; color: rgba(168,118,95,0.55); margin-left: auto; }
+.todo-day-items { display: flex; flex-direction: column; gap: 6px; }
+.dark .todo-day-label { color: #c9a227; }
+.dark .todo-day-stats { color: rgba(201,162,39,0.55); background: rgba(201,162,39,0.08); }
+.dark .todo-day-arrow { color: rgba(201,162,39,0.5); }
 
 .todo-suggest-btn {
   font-size: 12px; font-family: inherit;
