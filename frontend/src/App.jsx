@@ -185,7 +185,7 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
             <span className="su-val">{usageData?.count ?? '…'}</span>
           </div>
           <div className="su-row">
-            <span className="su-label">陪伴天数</span>
+            <span className="su-label">相处时间</span>
             <span className="su-val">{daysTogether()} 天</span>
           </div>
           <div className="su-row">
@@ -235,7 +235,7 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
         )}
         {claudeUsage && !claudeUsage.ok && (
           <div className="su-section">
-            <div className="su-err">暂时读不到 Claude 用量{claudeUsage.error ? '：' + claudeUsage.error : ''}</div>
+            <div className="su-err">当前 token 暂不支持读取用量，可在 claude.ai 查看</div>
           </div>
         )}
       </div>
@@ -405,12 +405,12 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
           </div>
           <div className="settings-row" onClick={() => setSubview('usage')}>
             <span className="settings-row-label">用量</span>
-            <span className="settings-row-val">消息 & 陪伴</span>
+            <span className="settings-row-val">消息 & 记录</span>
             <span className="settings-row-arrow">›</span>
           </div>
           <div className="settings-row" onClick={() => setSubview('connectors')}>
             <span className="settings-row-label">连接器</span>
-            <span className="settings-row-val">❤️ 📍 📓 ✉️</span>
+            <span className="settings-row-val">健康 · 数据</span>
             <span className="settings-row-arrow">›</span>
           </div>
           <div className="settings-row" onClick={() => setDark(d => !d)}>
@@ -640,7 +640,7 @@ function JournalCard({ entry, expanded, onToggle, onReplySubmit }) {
           {allComments.map((c, i) => (
             <div key={i} className={`jcard-cmt jcard-cmt-${c.role}`}>
               <span className="jcard-cmt-who">{c.role === 'user' ? '小好' : '克'}</span>
-              <span className="jcard-cmt-text">{c.content}</span>
+              <div className="jcard-cmt-text">{c.content}</div>
             </div>
           ))}
         </div>
@@ -1059,8 +1059,7 @@ function Home({ dark, setDark, setTraceModal }) {
       setPokeTraceOpen(false)
       setPokeShow(true)
       if (pokeHideTimer.current) clearTimeout(pokeHideTimer.current)
-      const hideDelay = data.trace && data.trace.length > 0 ? 6000 : 3000
-      pokeHideTimer.current = setTimeout(() => setPokeShow(false), hideDelay)
+      pokeHideTimer.current = setTimeout(() => setPokeShow(false), 15000)
     } catch {}
   }
 
@@ -1253,17 +1252,13 @@ function Home({ dark, setDark, setTraceModal }) {
         <button className="home-poke-btn" onClick={poke}>
           <span className="poke-icon">👉</span><span>戳一戳</span>
         </button>
-        {pokeShow && (
-          <div className="home-poke-msg-wrap">
-            {pokeTrace && pokeTrace.length > 0 && setTraceModal && (
-              <button className="trace-btn" style={{ marginBottom: '6px' }} onClick={() => setTraceModal(pokeTrace)}>
-                <span className="trace-btn-icon">✦</span>
-                <span>Thinking...</span>
-              </button>
-            )}
-            <div className="home-poke-msg">{pokeMsg}</div>
-          </div>
+        {pokeShow && pokeTrace && pokeTrace.length > 0 && (
+          <button className="trace-btn poke-trace-btn" onClick={() => setTraceModal(pokeTrace)}>
+            <span className="trace-btn-icon">✦</span>
+            <span>Thought process</span>
+          </button>
         )}
+        {pokeShow && <div className="home-poke-msg">{pokeMsg}</div>}
       </div>
 
       {/* 许愿清单 */}

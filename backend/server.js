@@ -57,6 +57,7 @@ async function fetchClaudeUsage() {
       headers: { 'Authorization': `Bearer ${oauth.accessToken}`, 'anthropic-beta': 'oauth-2025-04-20' }
     })
     const data = await r.json()
+    if (!r.ok || data.error) return { ok: false, error: data.error?.message || `HTTP ${r.status}` }
     const KEYS = { five_hour: '5 小时', seven_day: '7 天总量', seven_day_sonnet: '7 天 Sonnet' }
     const windows = {}
     for (const [key, label] of Object.entries(KEYS)) {
@@ -531,8 +532,10 @@ app.post('/api/chat', async (req, res) => {
   const { messages, session_id = 'default', preferences, model, attachment } = req.body
   const lastMsg = messages[messages.length - 1]
   // fire-and-forget: 不阻塞聊天响应
-  supabase.from('messages').insert({ session_id, role: lastMsg.role, content: lastMsg.content })
-    .catch(e => console.log('SUPABASE INSERT ERROR:', e.message))
+  ;(async () => {
+    const { error } = await supabase.from('messages').insert({ session_id, role: lastMsg.role, content: lastMsg.content })
+    if (error) console.log('SUPABASE INSERT ERROR:', error.message)
+  })()
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')

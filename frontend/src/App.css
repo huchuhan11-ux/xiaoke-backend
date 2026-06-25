@@ -1568,10 +1568,16 @@ button {
 }
 
 .home-poke-msg {
-  margin-top: 10px;
+  margin-top: 8px;
   text-align: center;
   font-size: 13px;
   color: #8b7355;
+  padding: 0 16px;
+}
+
+.poke-trace-btn {
+  margin-top: 8px;
+  align-self: center;
 }
 
 .home-section {
@@ -3063,28 +3069,43 @@ button.diary-mood-btn {
   border-top: 1px solid rgba(192,139,114,0.12);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .jcard-cmt {
   display: flex;
-  gap: 8px;
-  align-items: flex-start;
-  font-size: 13px;
-  line-height: 1.65;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13.5px;
+  line-height: 1.7;
 }
+.jcard-cmt-user { align-items: flex-end; }
+.jcard-cmt-assistant { align-items: flex-start; }
 
 .jcard-cmt-who {
-  flex-shrink: 0;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
-  padding-top: 2px;
-  min-width: 24px;
+  padding: 0 4px;
 }
-
 .jcard-cmt-assistant .jcard-cmt-who { color: #c08b72; }
 .jcard-cmt-user .jcard-cmt-who { color: #7a9cc0; }
-.jcard-cmt-text { color: #4a3728; }
+
+.jcard-cmt-text {
+  max-width: 86%;
+  padding: 8px 12px;
+  border-radius: 14px;
+  line-height: 1.65;
+}
+.jcard-cmt-user .jcard-cmt-text {
+  background: rgba(122,156,192,0.13);
+  color: #3a4a5c;
+  border-bottom-right-radius: 4px;
+}
+.jcard-cmt-assistant .jcard-cmt-text {
+  background: rgba(192,139,114,0.1);
+  color: #4a3728;
+  border-bottom-left-radius: 4px;
+}
 
 .jcard-reply-row {
   display: flex;
@@ -3243,9 +3264,10 @@ button.diary-mood-btn {
 .dark .jcard-mood { background: rgba(201,162,39,0.1); color: #c9a227; }
 .dark .jcard-more { color: #c9a227; }
 .dark .jcard-comments { border-top-color: rgba(201,162,39,0.1); }
-.dark .jcard-cmt-text { color: #c8b89a; }
 .dark .jcard-cmt-assistant .jcard-cmt-who { color: #c9a227; }
 .dark .jcard-cmt-user .jcard-cmt-who { color: #7a9cc0; }
+.dark .jcard-cmt-user .jcard-cmt-text { background: rgba(122,156,192,0.15); color: #b0c4d8; }
+.dark .jcard-cmt-assistant .jcard-cmt-text { background: rgba(201,162,39,0.08); color: #c8b89a; }
 .dark .jcard-reply-input { background: #1a1710; border-color: rgba(201,162,39,0.2); color: #e8d5a3; }
 .dark .jcard-reply-btn { background: #c9a227; color: #1a1710; }
 .dark .jbar { background: rgba(18,16,13,0.97); border-top-color: rgba(201,162,39,0.12); }
