@@ -164,29 +164,28 @@ async function recentMoodLine() {
   }
 }
 
+const withTimeout = (p, ms) => Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error('timeout')), ms))])
+
 async function buildRealContext() {
-  const mood = await recentMoodLine()
+  const [mood, healthRow, locRow] = await Promise.all([
+    withTimeout(recentMoodLine(), 2500).catch(() => ''),
+    withTimeout(supabase.from('health').select('*').eq('date', new Date().toLocaleDateString('en-CA')).single(), 2500).catch(() => ({ data: null })),
+    withTimeout(supabase.from('user_config').select('value').eq('key', 'userLocation').single(), 2500).catch(() => ({ data: null }))
+  ])
   let healthStr = ''
-  try {
-    const today = new Date().toLocaleDateString('en-CA')
-    const { data: h } = await supabase.from('health').select('*').eq('date', today).single()
-    if (h) {
-      const parts = []
-      if (h.sleep_hours != null && h.sleep_hours > 0) {
-        const hrs = Math.floor(h.sleep_hours)
-        const mins = Math.round((h.sleep_hours - hrs) * 60)
-        parts.push(`睡了 ${hrs}h${mins > 0 ? ` ${mins}m` : ''}`)
-      }
-      if (h.resting_heart_rate) parts.push(`静息心率 ${h.resting_heart_rate} bpm`)
-      if (h.steps) parts.push(`今日步数 ${h.steps}`)
-      if (parts.length) healthStr = '\n身体数据：' + parts.join('，')
+  const h = healthRow?.data
+  if (h) {
+    const parts = []
+    if (h.sleep_hours != null && h.sleep_hours > 0) {
+      const hrs = Math.floor(h.sleep_hours)
+      const mins = Math.round((h.sleep_hours - hrs) * 60)
+      parts.push(`睡了 ${hrs}h${mins > 0 ? ` ${mins}m` : ''}`)
     }
-  } catch {}
-  let locationStr = ''
-  try {
-    const { data: loc } = await supabase.from('user_config').select('value').eq('key', 'userLocation').single()
-    if (loc?.value) locationStr = '\n当前位置：' + loc.value
-  } catch {}
+    if (h.resting_heart_rate) parts.push(`静息心率 ${h.resting_heart_rate} bpm`)
+    if (h.steps) parts.push(`今日步数 ${h.steps}`)
+    if (parts.length) healthStr = '\n身体数据：' + parts.join('，')
+  }
+  const locationStr = locRow?.data?.value ? '\n当前位置：' + locRow.data.value : ''
   return `\n\n【此刻真实信息——过程记录只能引用这里面的事实，不要编造】\n现在是：${nowDescriptor()}${healthStr}${locationStr}${mood ? '\n' + mood : ''}`
 }
 

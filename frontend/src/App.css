@@ -3839,52 +3839,60 @@ button.diary-mood-btn {
   border: 0.5px solid rgba(192,139,114,0.18);
   border-radius: 14px;
 }
-.su-section-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #6b5040;
-  margin-bottom: 12px;
+.su-plan-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-.su-tier-badge {
-  font-size: 10px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  background: rgba(192,139,114,0.15);
-  color: #a8765f;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-}
-.su-usage-row {
-  margin-bottom: 12px;
-}
-.su-usage-head {
-  display: flex;
   justify-content: space-between;
-  align-items: center;
+  margin-bottom: 12px;
+}
+.su-plan-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #8b7355;
+  letter-spacing: 0.02em;
+}
+.su-plan-arrow {
+  font-size: 12px;
+  color: #c08b72;
+}
+.su-plan-row {
+  margin-bottom: 10px;
+}
+.su-plan-row:last-of-type {
+  margin-bottom: 0;
+}
+.su-plan-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   margin-bottom: 5px;
 }
-.su-usage-label {
-  font-size: 12px;
-  color: #8b7355;
-}
-.su-usage-pct {
-  font-size: 12px;
+.su-plan-name {
+  font-size: 12.5px;
   color: #6b5040;
-  font-weight: 600;
+  font-weight: 500;
+  flex-shrink: 0;
 }
-.su-bar-track {
-  height: 6px;
+.su-plan-meta {
+  font-size: 11px;
+  color: #a8957f;
+  flex: 1;
+}
+.su-plan-pct {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b5040;
+  flex-shrink: 0;
+}
+.su-plan-bar {
+  height: 4px;
   background: rgba(192,139,114,0.12);
-  border-radius: 4px;
+  border-radius: 3px;
   overflow: hidden;
 }
-.su-bar-fill {
+.su-plan-fill {
   height: 100%;
-  background: #7ec8a0;
-  border-radius: 4px;
+  border-radius: 3px;
   transition: width 0.4s ease;
 }
 .su-reset-time {
@@ -3895,7 +3903,7 @@ button.diary-mood-btn {
 .su-extra {
   font-size: 11px;
   color: #a8957f;
-  margin-top: 8px;
+  margin-top: 10px;
   padding-top: 10px;
   border-top: 0.5px solid rgba(192,139,114,0.15);
 }
@@ -3905,11 +3913,11 @@ button.diary-mood-btn {
   font-style: italic;
 }
 .dark .su-section { background: rgba(201,162,39,0.04); border-color: rgba(201,162,39,0.12); }
-.dark .su-section-title { color: #e8d5a3; }
-.dark .su-usage-label { color: #9a8a5a; }
-.dark .su-usage-pct { color: #c9a227; }
-.dark .su-bar-track { background: rgba(201,162,39,0.08); }
-.dark .su-reset-time { color: #7a6a5a; }
+.dark .su-plan-label { color: #9a8a5a; }
+.dark .su-plan-name { color: #e8d5a3; }
+.dark .su-plan-pct { color: #c9a227; }
+.dark .su-plan-bar { background: rgba(201,162,39,0.08); }
+.dark .su-plan-meta { color: #7a6a5a; }
 
 /* ── connectors ── */
 .conn-list {

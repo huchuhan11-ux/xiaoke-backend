@@ -195,26 +195,41 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
         </div>
         {claudeUsage?.ok && (
           <div className="su-section">
-            <div className="su-section-title">
-              Claude Code
-              {claudeUsage.tier && <span className="su-badge su-tier-badge">{claudeUsage.tier.toUpperCase()}</span>}
+            <div className="su-plan-header">
+              <span className="su-plan-label">Plan usage</span>
+              <span className="su-plan-arrow">→</span>
             </div>
             {Object.keys(claudeUsage.windows || {}).length === 0
               ? <div className="su-reset-time" style={{ padding: '8px 0' }}>暂无用量数据（可能刚重置）</div>
-              : Object.entries(claudeUsage.windows).map(([key, w]) => (
-              <div className="su-usage-row" key={key}>
-                <div className="su-usage-head">
-                  <span className="su-usage-label">{w.label}</span>
-                  <span className="su-usage-pct">{Math.round(w.utilization ?? 0)}%</span>
-                </div>
-                <div className="su-bar-track">
-                  <div className="su-bar-fill" style={{ width: `${Math.min(Math.round(w.utilization ?? 0), 100)}%` }} />
-                </div>
-                {w.resets_at && <div className="su-reset-time">{fmtReset(w.resets_at)}</div>}
-              </div>
-            ))}
+              : Object.entries(claudeUsage.windows).map(([key, w]) => {
+                const pct = Math.round(w.utilization ?? 0)
+                let resetStr = ''
+                if (w.resets_at) {
+                  const d = new Date(w.resets_at)
+                  const diffMs = d - Date.now()
+                  if (diffMs < 0) { resetStr = '已重置' }
+                  else if (diffMs < 86400000) {
+                    resetStr = 'Resets ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+                  } else {
+                    resetStr = 'Resets ' + d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                  }
+                }
+                const LABELS = { five_hour: '5-hour limit', seven_day: 'Weekly · all models', seven_day_sonnet: 'Weekly · Sonnet' }
+                return (
+                  <div className="su-plan-row" key={key}>
+                    <div className="su-plan-row-head">
+                      <span className="su-plan-name">{LABELS[key] || w.label}</span>
+                      <span className="su-plan-meta">{resetStr}</span>
+                      <span className="su-plan-pct">{pct}%</span>
+                    </div>
+                    <div className="su-plan-bar">
+                      <div className="su-plan-fill" style={{ width: `${Math.min(pct, 100)}%`, background: pct >= 90 ? '#c08b72' : '#7eb8c0' }} />
+                    </div>
+                  </div>
+                )
+              })}
             {claudeUsage.extra_usage?.is_enabled && (
-              <div className="su-extra">超量用量：${((claudeUsage.extra_usage.used_credits || 0) / 100).toFixed(2)} / ${((claudeUsage.extra_usage.monthly_limit || 0) / 100).toFixed(0)} 本月</div>
+              <div className="su-extra">超量：${((claudeUsage.extra_usage.used_credits || 0) / 100).toFixed(2)} / ${((claudeUsage.extra_usage.monthly_limit || 0) / 100).toFixed(0)}</div>
             )}
           </div>
         )}
@@ -298,38 +313,40 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
             <span className="conn-badge active">已连接</span>
           </div>
           {/* 位置 */}
-          <div className={`conn-row ${locEnabled ? 'active' : 'todo'}`}>
-            <span className="conn-icon">📍</span>
-            <div className="conn-info" style={{ flex: 1 }}>
-              <div className="conn-label">位置 <span className="conn-desc">获取当前城市</span></div>
-              <div className="conn-note">用于天气和问答</div>
-              {locEnabled && (
-                <div className="conn-form" style={{ marginTop: 6, padding: 0, background: 'none' }}>
-                  <div className="conn-form-row">
-                    <input className="conn-input" placeholder="输入地址或城市" value={locInput}
-                      onChange={e => setLocInput(e.target.value)}
-                      onBlur={() => saveLocation(locInput)} />
-                    <button className="conn-badge todo" style={{ flexShrink: 0 }} onClick={autoLocate}>GPS</button>
-                  </div>
-                  {locSaved && <span style={{ fontSize: 11, color: '#7ec8a0', marginTop: 2 }}>已保存</span>}
-                  {locGpsErr && <span style={{ fontSize: 11, color: '#c08b72', marginTop: 2 }}>GPS不可用，请手动输入</span>}
-                </div>
-              )}
+          <div className={`conn-row ${locEnabled ? 'active' : 'todo'}`} style={{ flexDirection: 'column', alignItems: 'stretch', gap: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span className="conn-icon">📍</span>
+              <div className="conn-info" style={{ flex: 1 }}>
+                <div className="conn-label">位置 <span className="conn-desc">获取当前城市</span></div>
+                <div className="conn-note">用于天气和问答</div>
+              </div>
+              <button className={`conn-badge ${locEnabled ? 'active' : 'todo'}`} style={{ flexShrink: 0 }}
+                onClick={() => {
+                  const next = !locEnabled
+                  setLocEnabled(next)
+                  localStorage.setItem('locEnabled', next ? '1' : '0')
+                  if (!next) {
+                    localStorage.removeItem('locText')
+                    setLocInput('')
+                    fetch(`${API}/api/config`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ key: 'userLocation', value: '' }) }).catch(() => {})
+                  } else if (!locInput) autoLocate()
+                }}>
+                {locEnabled ? '已启用' : '启用'}
+              </button>
             </div>
-            <button className={`conn-badge ${locEnabled ? 'active' : 'todo'}`} style={{ flexShrink: 0 }}
-              onClick={() => {
-                const next = !locEnabled
-                setLocEnabled(next)
-                localStorage.setItem('locEnabled', next ? '1' : '0')
-                if (!next) {
-                  localStorage.removeItem('locText')
-                  setLocInput('')
-                  fetch(`${API}/api/config`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ key: 'userLocation', value: '' }) }).catch(() => {})
-                } else if (!locInput) autoLocate()
-              }}>
-              {locEnabled ? '已启用' : '启用'}
-            </button>
+            {locEnabled && (
+              <div style={{ marginTop: 8, paddingLeft: 36 }}>
+                <div className="conn-form-row">
+                  <input className="conn-input" style={{ flex: 1 }} placeholder="输入地址或城市" value={locInput}
+                    onChange={e => setLocInput(e.target.value)}
+                    onBlur={() => saveLocation(locInput)} />
+                  <button className="conn-badge todo" style={{ flexShrink: 0 }} onClick={autoLocate}>GPS</button>
+                </div>
+                {locSaved && <span style={{ fontSize: 11, color: '#7ec8a0', marginTop: 4, display: 'block' }}>已保存</span>}
+                {locGpsErr && <span style={{ fontSize: 11, color: '#c08b72', marginTop: 4, display: 'block' }}>GPS不可用，请手动输入</span>}
+              </div>
+            )}
           </div>
           {/* 日历 */}
           <div className="conn-row active">
@@ -353,25 +370,24 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
               <button className="conn-form-btn" onClick={createCalEvent}>添加到日历</button>
             </div>
           )}
-          {/* 提醒 */}
-          <div className="conn-row active">
-            <span className="conn-icon">🔔</span>
+          {/* Notion */}
+          <div className="conn-row todo">
+            <span className="conn-icon">📓</span>
             <div className="conn-info">
-              <div className="conn-label">提醒 <span className="conn-desc">创建提醒事项</span></div>
-              <div className="conn-note">生成 ICS 文件 → 添加到 iPhone 提醒</div>
+              <div className="conn-label">Notion <span className="conn-desc">笔记和数据库</span></div>
+              <div className="conn-note">读取和写入 Notion 页面</div>
             </div>
-            <button className="conn-badge todo" onClick={() => setRemForm(remForm ? null : { title: '', notes: '', due: '' })}>
-              {remForm ? '取消' : '创建'}
-            </button>
+            <span className="conn-badge todo">即将支持</span>
           </div>
-          {remForm && (
-            <div className="conn-form">
-              <input className="conn-input" placeholder="提醒内容" value={remForm.title} onChange={e => setRemForm(f => ({ ...f, title: e.target.value }))} />
-              <input className="conn-input" type="datetime-local" value={remForm.due} onChange={e => setRemForm(f => ({ ...f, due: e.target.value }))} />
-              <input className="conn-input" placeholder="备注（可选）" value={remForm.notes} onChange={e => setRemForm(f => ({ ...f, notes: e.target.value }))} />
-              <button className="conn-form-btn" onClick={createReminder}>添加到提醒</button>
+          {/* Gmail */}
+          <div className="conn-row todo">
+            <span className="conn-icon">✉️</span>
+            <div className="conn-info">
+              <div className="conn-label">Gmail <span className="conn-desc">邮件</span></div>
+              <div className="conn-note">查看和发送邮件</div>
             </div>
-          )}
+            <span className="conn-badge todo">即将支持</span>
+          </div>
         </div>
       </div>
     )
