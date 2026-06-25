@@ -1482,7 +1482,7 @@ export default function App() {
                 aiMsg = { ...aiMsg, trace: payload.trace }
               } else {
                 rawContent += payload.text
-                aiMsg = { ...aiMsg, content: rawContent.replace(/\[MSG\]/g, '') }
+                aiMsg = { ...aiMsg, content: rawContent.replace(/\[MSG\]/g, '').replace(/^\s+/, '') }
               }
               setMessages(prev => prev.map(m => m.id === aiMsg.id ? aiMsg : m))
             } catch {}
@@ -1558,6 +1558,7 @@ export default function App() {
             </div>
             <div className="messages" style={bgImage ? { background: 'transparent' } : {}}>
               {messages.map(m => (
+                (m.content?.trim() || m.trace?.length || m.role === 'user') ? (
                 <div key={m.id} className="msg-group">
                   {m.role === 'assistant' && m.trace && m.trace.length > 0 && (
                     <button className="trace-btn" onClick={() => setTraceModal(m.trace)}>
@@ -1604,12 +1605,13 @@ export default function App() {
                     </div>
                   )}
                 </div>
+                ) : null
               ))}
               {loading && (
                 <div className="msg-group">
                   <div className="thinking-card">
                     <span className="thinking-icon">✦</span>
-                    <span className="thinking-text">Thinking...</span>
+                    <span className="thinking-text">Thinking</span>
                     <span className="thinking-dot" /><span className="thinking-dot" /><span className="thinking-dot" />
                   </div>
                 </div>
@@ -1666,7 +1668,15 @@ export default function App() {
       <div className="tabbar">
         {NAV.map(n => (
           <div key={n.id} className={`tab-item ${view === n.id ? 'active' : ''}`}
-            onClick={() => setView(n.id)}>
+            onClick={() => {
+              if (n.id === 'chat' && view !== 'chat') {
+                const newId = `session_${Date.now()}`
+                setSessionId(newId)
+                localStorage.setItem('sessionId', newId)
+                setMessages(INIT)
+              }
+              setView(n.id)
+            }}>
             <span className="tab-icon">{TAB_ICON[n.id]}</span>
             <span className="tab-label">{n.label}</span>
           </div>
