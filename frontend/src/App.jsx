@@ -87,6 +87,7 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
   const [newDesc, setNewDesc] = useState('')
   const [usageData, setUsageData] = useState(null)
   const [claudeUsage, setClaudeUsage] = useState(null)
+  const [locStatus, setLocStatus] = useState(null)
 
   useEffect(() => {
     if (subview !== 'usage') return
@@ -196,7 +197,6 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
   }
 
   if (subview === 'connectors') {
-    const [locStatus, setLocStatus] = useState(null)
     const connectors = [
       { id: 'health', icon: '❤️', label: '健康', desc: 'iPhone 健康数据', status: 'active', note: '睡眠 · 心率 · 步数 · 周期' },
       { id: 'location', icon: '📍', label: '位置', desc: '获取当前城市', status: 'todo', note: '用于天气和问答' },
