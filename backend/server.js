@@ -732,6 +732,65 @@ app.delete('/api/wishes/:id', async (req, res) => {
   res.json({ ok: true })
 })
 
+// ── 每日清单（存在 user_config 表 key='todos'） ──
+async function getTodos() {
+  const { data } = await supabase.from('user_config').select('value').eq('key', 'todos').maybeSingle()
+  return Array.isArray(data?.value) ? data.value : []
+}
+async function setTodosDb(todos) {
+  await supabase.from('user_config').upsert({ key: 'todos', value: todos, updated_at: new Date().toISOString() })
+}
+
+app.get('/api/todos', async (req, res) => {
+  try { res.json(await getTodos()) } catch { res.json([]) }
+})
+
+app.post('/api/todos', async (req, res) => {
+  const { content, role = 'user' } = req.body
+  if (!content?.trim()) return res.status(400).json({ error: 'content required' })
+  try {
+    const todos = await getTodos()
+    const item = { id: Date.now().toString(), content: content.trim(), role, done: false, created_at: new Date().toISOString() }
+    todos.unshift(item)
+    await setTodosDb(todos)
+    res.json(item)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+app.patch('/api/todos/:id', async (req, res) => {
+  try {
+    const todos = await getTodos()
+    const item = todos.find(t => t.id === req.params.id)
+    if (item) item.done = !item.done
+    await setTodosDb(todos)
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+app.delete('/api/todos/:id', async (req, res) => {
+  try {
+    const todos = (await getTodos()).filter(t => t.id !== req.params.id)
+    await setTodosDb(todos)
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+app.post('/api/todos/suggest', async (req, res) => {
+  try {
+    const suggestion = await askClaude(
+      '给我们今天的清单建议一条事项，10字以内，不带序号，直接说事项内容。',
+      memoryCache
+    )
+    const content = suggestion?.trim().replace(/^[0-9.、。]+/, '').trim().slice(0, 30)
+    if (!content) return res.status(500).json({ error: 'empty' })
+    const todos = await getTodos()
+    const item = { id: Date.now().toString(), content, role: 'ai', done: false, created_at: new Date().toISOString() }
+    todos.unshift(item)
+    await setTodosDb(todos)
+    res.json(item)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 // ── 用户记忆库（与 AI 记忆共用 memories 表） ──
 app.get('/api/memories', async (req, res) => {
   const { data, error } = await supabase.from('memories')

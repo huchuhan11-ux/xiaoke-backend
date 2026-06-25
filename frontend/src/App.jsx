@@ -250,13 +250,6 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
       </div>
 
       <div className="prefs-section">
-        <div className="prefs-label">告诉小克</div>
-        <textarea className="prefs-textarea" value={prefs.extra}
-          onChange={e => set('extra', e.target.value)}
-          placeholder="最近的状态、想让他留意的事、任何补充…" rows={3} />
-      </div>
-
-      <div className="prefs-section">
         <div className="prefs-label">人设</div>
         <div className="prefs-hint" style={{ marginBottom: 8 }}>自定义补充小克的性格，会加入他的底层设定</div>
         <textarea className="prefs-textarea" value={prefs.persona}
@@ -439,6 +432,9 @@ function Records() {
   const [memSaving, setMemSaving] = useState(false)
   const [memSummarizing, setMemSummarizing] = useState(false)
   const [memMsg, setMemMsg] = useState('')
+  const [todos, setTodos] = useState([])
+  const [todoInput, setTodoInput] = useState('')
+  const [todoSuggesting, setTodoSuggesting] = useState(false)
 
   const load = async () => {
     const [diary, letters] = await Promise.all([
@@ -457,7 +453,12 @@ function Records() {
     setMemEntries(Array.isArray(data) ? data : [])
   }
 
-  useEffect(() => { load(); loadMem() }, [])
+  const loadTodos = async () => {
+    const data = await fetch(`${API}/api/todos`).then(r => r.json()).catch(() => [])
+    setTodos(Array.isArray(data) ? data : [])
+  }
+
+  useEffect(() => { load(); loadMem(); loadTodos() }, [])
 
   const ekey = e => `${e._type}-${e.id}`
 
@@ -594,6 +595,69 @@ function Records() {
     )
   }
 
+  // Todo section view
+  if (activeSection === 'todo') {
+    const addTodo = async () => {
+      if (!todoInput.trim()) return
+      const item = await fetch(`${API}/api/todos`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: todoInput.trim(), role: 'user' })
+      }).then(r => r.json()).catch(() => null)
+      if (item) { setTodos(prev => [item, ...prev]); setTodoInput('') }
+    }
+    const toggleTodo = async (id) => {
+      setTodos(prev => prev.map(t => t.id === id ? { ...t, done: !t.done } : t))
+      await fetch(`${API}/api/todos/${id}`, { method: 'PATCH' }).catch(() => {})
+    }
+    const delTodo = async (id) => {
+      setTodos(prev => prev.filter(t => t.id !== id))
+      await fetch(`${API}/api/todos/${id}`, { method: 'DELETE' }).catch(() => {})
+    }
+    const suggestTodo = async () => {
+      if (todoSuggesting) return
+      setTodoSuggesting(true)
+      try {
+        const r = await fetch(`${API}/api/todos/suggest`, { method: 'POST' }).then(d => d.json())
+        if (r?.content) setTodos(prev => [r, ...prev])
+      } catch {}
+      setTodoSuggesting(false)
+    }
+    return (
+      <div className="journal" style={{ display: 'flex', flexDirection: 'column' }}>
+        <div className="records-detail-wrap" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <div className="records-section-nav">
+            <button className="records-back-btn" style={{ padding: '10px 0 0' }} onClick={() => setActiveSection(null)}>←</button>
+            <span className="records-nav-title">每日清单</span>
+            <button className="todo-suggest-btn" onClick={suggestTodo} disabled={todoSuggesting}>
+              {todoSuggesting ? '想中…' : '小克来一条'}
+            </button>
+          </div>
+          <div className="todo-list" style={{ flex: 1, overflowY: 'auto' }}>
+            {todos.length === 0 && <div className="records-empty-sm">还没有清单</div>}
+            {todos.map(t => (
+              <div key={t.id} className="todo-item">
+                <button className={`todo-check${t.done ? ' done' : ''}`} onClick={() => toggleTodo(t.id)}>✓</button>
+                <span className={`todo-text${t.done ? ' done' : ''}`}>{t.content}</span>
+                {t.role === 'ai' && <span className="todo-role-ai">小克</span>}
+                <button className="todo-del" onClick={() => delTodo(t.id)}>×</button>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="todo-compose-bar">
+          <input className="todo-compose-input" value={todoInput} onChange={e => setTodoInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') addTodo() }}
+            placeholder="加一条…" />
+          <button className="todo-compose-send" onClick={addTodo}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   // Level 2: compact list within a section
   if (activeSection) {
     const isLetter = activeSection === 'letter'
@@ -675,6 +739,11 @@ function Records() {
           <div className="records-home-icon">✨</div>
           <div className="records-home-name">记忆库</div>
           <div className="records-home-sub">{memEntries.length > 0 ? `${memEntries.length} 条` : '还没有记忆'}</div>
+        </div>
+        <div className="records-home-card" onClick={() => setActiveSection('todo')}>
+          <div className="records-home-icon">☑️</div>
+          <div className="records-home-name">每日清单</div>
+          <div className="records-home-sub">{todos.filter(t => !t.done).length > 0 ? `${todos.filter(t => !t.done).length} 件待完成` : todos.length > 0 ? '全完成了' : '还没有清单'}</div>
         </div>
       </div>
     </div>
@@ -1175,11 +1244,12 @@ export default function App() {
       }
     }, 20000)
     const onHide = () => {
+      const now = Date.now()
       if (document.visibilityState === 'hidden') {
-        const now = Date.now()
         flushUsage(viewRef.current, now - viewStartRef.current)
-        viewStartRef.current = now
       }
+      // always reset on visibility change so background time isn't counted
+      viewStartRef.current = now
     }
     document.addEventListener('visibilitychange', onHide)
     window.addEventListener('beforeunload', onHide)
