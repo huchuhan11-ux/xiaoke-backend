@@ -189,7 +189,7 @@ function extractTrace(fullText) {
 function makeTraceSplitter(onText, onTrace) {
   let buffer = ''
   let resolved = false
-  return chunk => {
+  const fn = chunk => {
     if (resolved) { onText(chunk); return }
     buffer += chunk
     const closeIdx = buffer.indexOf('</trace>')
@@ -207,6 +207,10 @@ function makeTraceSplitter(onText, onTrace) {
     buffer = ''
     if (rest) onText(rest)
   }
+  fn.flush = () => {
+    if (!resolved && buffer.trim()) { resolved = true; onText(buffer); buffer = '' }
+  }
+  return fn
 }
 
 // trace 列可能还没在 Supabase 里建好（需要手动跑一次迁移），insert 失败时自动降级重试
@@ -338,6 +342,52 @@ app.get('/api/claude-usage', async (req, res) => {
   res.json(result)
 })
 
+function makeICS(type, fields) {
+  const uid = `${Date.now()}@xiaokehome`
+  const now = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15) + 'Z'
+  const lines = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//xiaokeHome//EN',
+    `BEGIN:${type}`, `UID:${uid}`, `DTSTAMP:${now}`,
+    ...fields, `END:${type}`, 'END:VCALENDAR'
+  ]
+  return lines.join('\r\n')
+}
+
+app.get('/api/ios/calendar', (req, res) => {
+  const { title = '事件', date, time, duration = '60', notes = '' } = req.query
+  let dtStart = '', dtEnd = ''
+  if (date && time) {
+    const s = new Date(`${date}T${time}`)
+    const e = new Date(s.getTime() + parseInt(duration) * 60000)
+    dtStart = s.toISOString().replace(/[-:.]/g, '').slice(0, 15)
+    dtEnd = e.toISOString().replace(/[-:.]/g, '').slice(0, 15)
+  }
+  const fields = [
+    dtStart ? `DTSTART:${dtStart}` : '',
+    dtEnd ? `DTEND:${dtEnd}` : '',
+    `SUMMARY:${title}`,
+    notes ? `DESCRIPTION:${notes}` : ''
+  ].filter(Boolean)
+  res.setHeader('Content-Type', 'text/calendar; charset=utf-8')
+  res.setHeader('Content-Disposition', 'attachment; filename="event.ics"')
+  res.send(makeICS('VEVENT', fields))
+})
+
+app.get('/api/ios/reminder', (req, res) => {
+  const { title = '提醒', notes = '', due } = req.query
+  let dueStr = ''
+  if (due) dueStr = new Date(due).toISOString().replace(/[-:.]/g, '').slice(0, 15)
+  const fields = [
+    `SUMMARY:${title}`,
+    notes ? `DESCRIPTION:${notes}` : '',
+    dueStr ? `DUE:${dueStr}` : '',
+    'STATUS:NEEDS-ACTION'
+  ].filter(Boolean)
+  res.setHeader('Content-Type', 'text/calendar; charset=utf-8')
+  res.setHeader('Content-Disposition', 'attachment; filename="reminder.ics"')
+  res.send(makeICS('VTODO', fields))
+})
+
 app.get('/api/weather', async (req, res) => {
   const city = req.query.city || 'Chengdu'
   const displayName = req.query.name || '成都'
@@ -444,6 +494,7 @@ app.post('/api/chat', async (req, res) => {
     )
     const prefsPrompt = buildPrefsPrompt(preferences)
     const fullContent = await streamClaude(transcript, memoryCache + TRACE_INSTRUCTION + context + prefsPrompt, splitter, model)
+    splitter.flush()
     const { trace, body } = extractTrace(fullContent)
     console.log('TRACE:', trace ? `yes (${(trace[0] || '').slice(0, 60)}...)` : 'null — model skipped trace')
     await insertMessageSafe({ session_id, role: 'assistant', content: body, trace })

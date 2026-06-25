@@ -84,6 +84,8 @@ html {
   font-size: 11.5px;
   color: #a8765f;
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   letter-spacing: 0.02em;
   font-family: inherit;
   align-self: flex-start;
@@ -3946,3 +3948,67 @@ button.diary-mood-btn {
 .dark .conn-badge.active { background: rgba(126,200,160,0.12); color: #7ec8a0; }
 .dark .conn-badge.todo { background: rgba(201,162,39,0.08); color: #c9a227; }
 .dark .conn-badge.soon { color: #7a6a5a; }
+
+.conn-toggle {
+  flex-shrink: 0;
+  width: 46px; height: 26px;
+  border-radius: 13px;
+  border: none;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  position: relative;
+  transition: background 0.2s;
+  padding: 0;
+}
+.conn-toggle.on { background: #7ec8a0; }
+.conn-toggle.off { background: rgba(192,139,114,0.25); }
+.conn-toggle-knob {
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s;
+  display: block;
+}
+.conn-toggle.on .conn-toggle-knob { transform: translateX(20px); }
+.conn-form {
+  background: rgba(192,139,114,0.05);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: -4px 0 4px;
+}
+.conn-form-row { display: flex; gap: 8px; }
+.conn-input {
+  flex: 1;
+  border: 0.5px solid rgba(192,139,114,0.3);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg);
+  outline: none;
+  -webkit-appearance: none;
+}
+.conn-form-btn {
+  background: rgba(192,139,114,0.15);
+  border: none;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 13px;
+  color: #a8765f;
+  font-family: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  text-align: center;
+}
+.dark .conn-toggle.on { background: #4a9a6a; }
+.dark .conn-form { background: rgba(201,162,39,0.05); }
+.dark .conn-input { border-color: rgba(201,162,39,0.2); }
+.dark .conn-form-btn { color: #c9a227; background: rgba(201,162,39,0.1); }

@@ -87,7 +87,10 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
   const [newDesc, setNewDesc] = useState('')
   const [usageData, setUsageData] = useState(null)
   const [claudeUsage, setClaudeUsage] = useState(null)
-  const [locStatus, setLocStatus] = useState(null)
+  const [locEnabled, setLocEnabled] = useState(() => localStorage.getItem('locEnabled') === '1')
+  const [locStatus, setLocStatus] = useState(() => localStorage.getItem('locEnabled') === '1' ? 'granted' : null)
+  const [calForm, setCalForm] = useState(null)
+  const [remForm, setRemForm] = useState(null)
 
   useEffect(() => {
     if (subview !== 'usage') return
@@ -197,57 +200,101 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
   }
 
   if (subview === 'connectors') {
-    const connectors = [
-      { id: 'health', icon: '❤️', label: '健康', desc: 'iPhone 健康数据', status: 'active', note: '睡眠 · 心率 · 步数 · 周期' },
-      { id: 'location', icon: '📍', label: '位置', desc: '获取当前城市', status: 'todo', note: '用于天气和问答' },
-      { id: 'calendar', icon: '📅', label: '日历', desc: '日程快速查询', status: 'soon', note: '即将支持' },
-      { id: 'reminders', icon: '🔔', label: '提醒', desc: '添加/查看提醒', status: 'soon', note: '即将支持' },
-    ]
-    const requestLocation = () => {
-      if (!navigator.geolocation) { setLocStatus('unavailable'); return }
-      if (window.location.protocol !== 'https:') { setLocStatus('needs-https'); return }
-      navigator.geolocation.getCurrentPosition(
-        pos => {
-          localStorage.setItem('userLat', pos.coords.latitude.toFixed(4))
-          localStorage.setItem('userLng', pos.coords.longitude.toFixed(4))
-          setLocStatus('granted')
-        },
-        () => setLocStatus('denied')
-      )
+    const toggleLocation = () => {
+      const next = !locEnabled
+      setLocEnabled(next)
+      localStorage.setItem('locEnabled', next ? '1' : '0')
+      if (next) {
+        setLocStatus('granted')
+      } else {
+        setLocStatus(null)
+        localStorage.removeItem('userLat')
+        localStorage.removeItem('userLng')
+      }
     }
-    const locNote = {
-      'needs-https': '需要 HTTPS 才能访问定位。在 Safari 设置中把此地址添加为受信任站点，或通过 HTTPS 域名访问。',
-      'denied': '定位被拒绝，请在 Safari 设置 → 隐私 → 定位服务中开启。',
-      'granted': '已获取位置，天气和问答会使用当前城市。',
-      'unavailable': '此浏览器不支持定位。',
+    const downloadICS = (url) => {
+      const a = document.createElement('a')
+      a.href = url; a.download = url.includes('reminder') ? 'reminder.ics' : 'event.ics'
+      document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    }
+    const createCalEvent = () => {
+      if (!calForm?.title) return
+      const params = new URLSearchParams({ title: calForm.title, date: calForm.date || '', time: calForm.time || '', duration: calForm.duration || '60', notes: calForm.notes || '' })
+      downloadICS(`/api/ios/calendar?${params}`)
+      setCalForm(null)
+    }
+    const createReminder = () => {
+      if (!remForm?.title) return
+      const params = new URLSearchParams({ title: remForm.title, notes: remForm.notes || '', due: remForm.due || '' })
+      downloadICS(`/api/ios/reminder?${params}`)
+      setRemForm(null)
     }
     return (
       <div className="prefs-page">
         <button className="prefs-back" onClick={() => setSubview(null)}>‹ 设置</button>
         <div className="prefs-title">连接器</div>
         <div className="conn-list">
-          {connectors.map(c => (
-            <div key={c.id} className={`conn-row ${c.id === 'location' && locStatus === 'granted' ? 'active' : c.status}`}>
-              <span className="conn-icon">{c.icon}</span>
-              <div className="conn-info">
-                <div className="conn-label">{c.label} <span className="conn-desc">{c.desc}</span></div>
-                <div className="conn-note">
-                  {c.id === 'location' && locStatus ? locNote[locStatus] : c.note}
-                </div>
-              </div>
-              {c.id === 'location' ? (
-                locStatus === 'granted'
-                  ? <span className="conn-badge active">已连接</span>
-                  : <button className="conn-badge todo" onClick={requestLocation}>启用</button>
-              ) : c.status === 'active' ? (
-                <span className="conn-badge active">已连接</span>
-              ) : c.status === 'todo' ? (
-                <button className="conn-badge todo">启用</button>
-              ) : (
-                <span className="conn-badge soon">即将支持</span>
-              )}
+          {/* 健康 */}
+          <div className="conn-row active">
+            <span className="conn-icon">❤️</span>
+            <div className="conn-info">
+              <div className="conn-label">健康 <span className="conn-desc">iPhone 健康数据</span></div>
+              <div className="conn-note">睡眠 · 心率 · 步数 · 周期</div>
             </div>
-          ))}
+            <span className="conn-badge active">已连接</span>
+          </div>
+          {/* 位置 toggle */}
+          <div className={`conn-row ${locEnabled ? 'active' : 'todo'}`}>
+            <span className="conn-icon">📍</span>
+            <div className="conn-info">
+              <div className="conn-label">位置 <span className="conn-desc">当前城市</span></div>
+              <div className="conn-note">{locEnabled ? '已启用，天气和问答使用成都' : '用于天气和问答'}</div>
+            </div>
+            <button className={`conn-toggle ${locEnabled ? 'on' : 'off'}`} onClick={toggleLocation}>
+              <span className="conn-toggle-knob" />
+            </button>
+          </div>
+          {/* 日历 */}
+          <div className="conn-row active">
+            <span className="conn-icon">📅</span>
+            <div className="conn-info">
+              <div className="conn-label">日历 <span className="conn-desc">创建日程事件</span></div>
+              <div className="conn-note">生成 ICS 文件 → 添加到 iPhone 日历</div>
+            </div>
+            <button className="conn-badge todo" onClick={() => setCalForm(calForm ? null : { title: '', date: '', time: '', duration: '60', notes: '' })}>
+              {calForm ? '取消' : '创建'}
+            </button>
+          </div>
+          {calForm && (
+            <div className="conn-form">
+              <input className="conn-input" placeholder="事件名称" value={calForm.title} onChange={e => setCalForm(f => ({ ...f, title: e.target.value }))} />
+              <div className="conn-form-row">
+                <input className="conn-input" type="date" value={calForm.date} onChange={e => setCalForm(f => ({ ...f, date: e.target.value }))} />
+                <input className="conn-input" type="time" value={calForm.time} onChange={e => setCalForm(f => ({ ...f, time: e.target.value }))} />
+              </div>
+              <input className="conn-input" placeholder="备注（可选）" value={calForm.notes} onChange={e => setCalForm(f => ({ ...f, notes: e.target.value }))} />
+              <button className="conn-form-btn" onClick={createCalEvent}>下载 ICS → 添加到日历</button>
+            </div>
+          )}
+          {/* 提醒 */}
+          <div className="conn-row active">
+            <span className="conn-icon">🔔</span>
+            <div className="conn-info">
+              <div className="conn-label">提醒 <span className="conn-desc">创建提醒事项</span></div>
+              <div className="conn-note">生成 ICS 文件 → 添加到 iPhone 提醒</div>
+            </div>
+            <button className="conn-badge todo" onClick={() => setRemForm(remForm ? null : { title: '', notes: '', due: '' })}>
+              {remForm ? '取消' : '创建'}
+            </button>
+          </div>
+          {remForm && (
+            <div className="conn-form">
+              <input className="conn-input" placeholder="提醒内容" value={remForm.title} onChange={e => setRemForm(f => ({ ...f, title: e.target.value }))} />
+              <input className="conn-input" type="datetime-local" value={remForm.due} onChange={e => setRemForm(f => ({ ...f, due: e.target.value }))} />
+              <input className="conn-input" placeholder="备注（可选）" value={remForm.notes} onChange={e => setRemForm(f => ({ ...f, notes: e.target.value }))} />
+              <button className="conn-form-btn" onClick={createReminder}>下载 ICS → 添加到提醒</button>
+            </div>
+          )}
         </div>
       </div>
     )
@@ -1565,8 +1612,7 @@ export default function App() {
     >
       <div className="main" style={(view === 'chat' && bgImage) ? { background: 'transparent' } : {}}>
         {view === 'home' && <Home dark={dark} setDark={setDark} setTraceModal={setTraceModal} />}
-        {view === 'chat' && (
-          <div className="chat">
+        <div className="chat" style={{ display: view === 'chat' ? 'flex' : 'none' }}>
             {sessionDrawerOpen && <div className="session-overlay" onClick={() => setSessionDrawerOpen(false)} />}
             <div className={`session-drawer ${sessionDrawerOpen ? 'open' : ''}`}>
               <div className="session-drawer-header">
@@ -1615,7 +1661,7 @@ export default function App() {
                     <div className={`bubble ${bgImage ? 'bubble-bg' : ''}`}>
                       {m.attachment?.isImage && <img className="msg-img" src={m.attachment.data} alt={m.attachment.name} />}
                       {m.attachment && !m.attachment.isImage && <div className="msg-file-chip">📎 {m.attachment.name}</div>}
-                      {m.content && !m.content.startsWith('[图片:') && !m.content.startsWith('[文件:') ? m.content : (!m.attachment ? m.content : null)}
+                      {m.content && !m.content.startsWith('[图片:') && !m.content.startsWith('[文件:') ? m.content.replace(/\[MSG\]/g, '') : (!m.attachment ? m.content : null)}
                     </div>
                   </div>
                   {m.id !== 1 && (
@@ -1704,7 +1750,6 @@ export default function App() {
               </div>
             </div>
           </div>
-        )}
         {view === 'records' && <Records />}
         {view === 'monitor' && <Monitor dark={dark} />}
         {view === 'settings' && <Settings dark={dark} setDark={setDark} chatModel={chatModel} setChatModel={setChatModel} />}
