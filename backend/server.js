@@ -266,6 +266,13 @@ function extractActions(body) {
     actions.push({ type: 'rem', title, due, notes, raw: m[0] })
     clean = clean.replace(m[0], '')
   }
+  const alarmRe = /\[ALARM:([^\]]*)\]/g
+  while ((m = alarmRe.exec(body)) !== null) {
+    const [title, date, time, notes = ''] = m[1].split('|').map(s => s.trim())
+    const due = date && time ? `${date} ${time}` : (date || time || '')
+    actions.push({ type: 'rem', title, due, notes, raw: m[0] })
+    clean = clean.replace(m[0], '')
+  }
   while ((m = emailRe.exec(body)) !== null) {
     const parts = m[1].split('|').map(s => s.trim())
     const [to, subject, ...bodyParts] = parts

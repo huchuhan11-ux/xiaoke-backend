@@ -690,7 +690,7 @@ function JournalCard({ entry, expanded, onToggle, onReplySubmit }) {
             onChange={e => setReplyInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') submitReply() }}
             placeholder="回信…" />
-          <button className="jcard-reply-btn" onClick={submitReply} disabled={replying}>发</button>
+          <button className="jcard-reply-btn" onClick={submitReply} disabled={replying}>发送</button>
         </div>
       )}
     </div>
@@ -1517,6 +1517,7 @@ export default function App() {
 
   useEffect(() => {
     const tick = setInterval(() => {
+      if (document.visibilityState !== 'visible') return
       const now = Date.now()
       if (now - viewStartRef.current >= 20000) {
         flushUsage(viewRef.current, now - viewStartRef.current)
@@ -1813,7 +1814,7 @@ export default function App() {
                     <div className={`bubble ${bgImage ? 'bubble-bg' : ''}`}>
                       {m.attachment?.isImage && <img className="msg-img" src={m.attachment.data} alt={m.attachment.name} />}
                       {m.attachment && !m.attachment.isImage && <div className="msg-file-chip">📎 {m.attachment.name}</div>}
-                      {m.content && !m.content.startsWith('[图片:') && !m.content.startsWith('[文件:') ? m.content.replace(/\[MSG?\]|\[M[A-Z]*G\]/g, '').replace(/\[(?:CAL|REM|EMAIL|NOTION):[^\]]*\]/g, '').trim() : (!m.attachment ? m.content : null)}
+                      {m.content && !m.content.startsWith('[图片:') && !m.content.startsWith('[文件:') ? m.content.replace(/\[MSG?\]|\[M[A-Z]*G\]/g, '').replace(/\[(?:CAL|REM|ALARM|EMAIL|NOTION):[^\]]*\]/g, '').trim() : (!m.attachment ? m.content : null)}
                     </div>
                   </div>
                   {m.id !== 1 && (
