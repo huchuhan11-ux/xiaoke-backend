@@ -575,6 +575,7 @@ html {
   align-items: center !important;
   justify-content: space-around !important;
   z-index: 999 !important;
+  padding-top: calc(env(safe-area-inset-bottom, 0px) * 0.45) !important;
   padding-bottom: env(safe-area-inset-bottom, 0px) !important;
 }
 
