@@ -415,20 +415,17 @@ app.get('/api/ios/calendar', (req, res) => {
 
 app.get('/api/ios/reminder', (req, res) => {
   const { title = '提醒', notes = '', due } = req.query
-  // iOS Safari doesn't open VTODO — use VEVENT with alarm instead
-  const fields = [`SUMMARY:${title}`]
+  const fields = [`SUMMARY:${title}`, 'STATUS:NEEDS-ACTION']
   if (due) {
     const pad = n => String(n).padStart(2, '0')
     const dt = new Date(due)
     const local = `${dt.getFullYear()}${pad(dt.getMonth()+1)}${pad(dt.getDate())}T${pad(dt.getHours())}${pad(dt.getMinutes())}00`
-    fields.push(`DTSTART;TZID=Asia/Shanghai:${local}`)
-    fields.push(`DTEND;TZID=Asia/Shanghai:${local}`)
-    fields.push('BEGIN:VALARM', 'TRIGGER:PT0S', 'ACTION:DISPLAY', `DESCRIPTION:${title}`, 'END:VALARM')
+    fields.push(`DUE;TZID=Asia/Shanghai:${local}`)
   }
   if (notes) fields.push(`DESCRIPTION:${notes}`)
   res.setHeader('Content-Type', 'text/calendar; charset=utf-8')
   res.setHeader('Content-Disposition', 'inline; filename="reminder.ics"')
-  res.send(makeICS('VEVENT', fields))
+  res.send(makeICS('VTODO', fields))
 })
 
 app.get('/api/weather', async (req, res) => {
