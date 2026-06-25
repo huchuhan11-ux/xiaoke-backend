@@ -964,7 +964,7 @@ function Records() {
         <div className="todo-compose-bar">
           <input className="todo-compose-input" value={todoInput} onChange={e => setTodoInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') addTodo() }}
-            placeholder="加一条…" />
+            placeholder="新增一条…" />
           <button className="todo-compose-send" onClick={addTodo}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
@@ -1780,8 +1780,15 @@ export default function App() {
       const secs = thinkStartRef.current ? Math.round((Date.now() - thinkStartRef.current) / 1000) : null
       if (msgParts.length > 1) {
         const ts = Date.now()
-        const multi = msgParts.map((p, i) => ({ id: ts + i, role: 'assistant', content: p, trace: i === 0 ? aiMsg.trace : undefined, thinkSecs: i === 0 && secs != null ? secs : undefined }))
-        setMessages(prev => [...prev.filter(m => m.id !== aiMsg.id), ...multi])
+        // Show first bubble immediately, stagger the rest (feels like messages arriving one by one)
+        setMessages(prev => [...prev.filter(m => m.id !== aiMsg.id),
+          { id: ts, role: 'assistant', content: msgParts[0], trace: aiMsg.trace, thinkSecs: secs != null ? secs : undefined }
+        ])
+        for (let i = 1; i < msgParts.length; i++) {
+          await new Promise(r => setTimeout(r, 700))
+          const part = msgParts[i]
+          setMessages(prev => [...prev, { id: ts + i, role: 'assistant', content: part }])
+        }
       } else if (secs != null) {
         setMessages(prev => prev.map(m => m.id === aiMsg.id ? { ...m, thinkSecs: secs } : m))
       }

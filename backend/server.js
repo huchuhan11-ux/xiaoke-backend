@@ -49,76 +49,16 @@ function getClaudeOAuth() {
   return null
 }
 
-async function refreshOAuthToken() {
-  const { execSync, execFileSync } = require('child_process')
-  let rawCreds = null, foundSvc = null
-  for (const svc of ['Claude Code-credentials', 'claude-code-credentials']) {
-    try {
-      const r = execSync(`security find-generic-password -s "${svc}" -w 2>/dev/null`, { encoding: 'utf8', timeout: 5000 }).trim()
-      if (r) { rawCreds = r; foundSvc = svc; break }
-    } catch {}
-  }
-  if (!rawCreds || !foundSvc) return false
-  let fullCreds
-  try { fullCreds = JSON.parse(rawCreds) } catch { return false }
-  const oauth = fullCreds?.claudeAiOauth
-  if (!oauth?.refreshToken) return false
-  // OAuth standard: token endpoint requires application/x-www-form-urlencoded, NOT JSON
-  const refreshBody = `grant_type=refresh_token&refresh_token=${encodeURIComponent(oauth.refreshToken)}`
-  const proxy = 'http://127.0.0.1:6952'
-  const tryRefresh = (useProxy) => {
-    const args = ['-s', '-X', 'POST', '-H', 'Content-Type: application/x-www-form-urlencoded', '-d', refreshBody]
-    if (useProxy) args.push('-x', proxy)
-    args.push('--max-time', '15', 'https://platform.claude.com/v1/oauth/token')
-    return execFileSync('curl', args, { encoding: 'utf8', timeout: 20000 })
-  }
-  let out
-  try { out = tryRefresh(true) } catch { try { out = tryRefresh(false) } catch { return false } }
-  let data
-  try { data = JSON.parse(out) } catch { return false }
-  if (!data.access_token) { console.log('OAuth refresh failed:', out.slice(0, 200)); return false }
-  fullCreds.claudeAiOauth = {
-    ...oauth,
-    accessToken: data.access_token,
-    refreshToken: data.refresh_token || oauth.refreshToken,
-    expiresAt: data.expires_in ? Date.now() + data.expires_in * 1000 : Date.now() + 3600000
-  }
-  const tmpJson = `/tmp/cc-creds-${Date.now()}.json`
-  const tmpPy = `/tmp/cc-kc-${Date.now()}.py`
-  try {
-    fs.writeFileSync(tmpJson, JSON.stringify(fullCreds))
-    fs.writeFileSync(tmpPy, `import subprocess,sys\nsvc=sys.argv[1];path=sys.argv[2]\nwith open(path) as f: content=f.read()\nsubprocess.run(['security','delete-generic-password','-s',svc],capture_output=True)\nsubprocess.run(['security','add-generic-password','-s',svc,'-a','','-w',content])\n`)
-    execFileSync('python3', [tmpPy, foundSvc, tmpJson], { encoding: 'utf8', timeout: 10000 })
-    fs.unlinkSync(tmpJson); fs.unlinkSync(tmpPy)
-    claudeUsageCache = null; claudeUsageCacheAt = 0
-    console.log('OAuth token refreshed')
-    return true
-  } catch (e) {
-    try { fs.unlinkSync(tmpJson) } catch {}; try { fs.unlinkSync(tmpPy) } catch {}
-    return false
-  }
-}
 
 async function fetchClaudeUsage() {
   const now = Date.now()
   if (claudeUsageCache && now - claudeUsageCacheAt < 5 * 60 * 1000) return claudeUsageCache
-  try {
-    let oauth = getClaudeOAuth()
-    if (!oauth?.accessToken) return { ok: false, error: 'no OAuth token found' }
-    if (oauth.expiresAt && oauth.expiresAt < now) {
-      console.log('OAuth token expired, refreshing...')
-      const ok = await refreshOAuthToken()
-      if (ok) oauth = getClaudeOAuth()
-    }
-    const { execFileSync } = require('child_process')
+  const { execFileSync } = require('child_process')
+  const doFetch = (accessToken) => {
     const curlUsage = (proxy) => {
       const args = ['-s', '--max-time', '8']
       if (proxy) args.push('-x', proxy)
-      args.push(
-        '-H', `Authorization: Bearer ${oauth.accessToken}`,
-        '-H', 'anthropic-beta: oauth-2025-04-20',
-        'https://api.anthropic.com/api/oauth/usage'
-      )
+      args.push('-H', `Authorization: Bearer ${accessToken}`, '-H', 'anthropic-beta: oauth-2025-04-20', 'https://api.anthropic.com/api/oauth/usage')
       return execFileSync('curl', args, { encoding: 'utf8', timeout: 10000 })
     }
     let out
@@ -127,8 +67,22 @@ async function fetchClaudeUsage() {
       out = curlUsage(proxy)
       if (out.includes('"error"') && !out.includes('"utilization"')) out = curlUsage('')
     } catch { out = curlUsage('') }
-    const data = JSON.parse(out)
-    if (data.error) return { ok: false, error: data.error?.message || 'api error' }
+    return JSON.parse(out)
+  }
+  try {
+    let oauth = getClaudeOAuth()
+    if (!oauth?.accessToken) return { ok: false, error: 'no OAuth token found' }
+    let data = doFetch(oauth.accessToken)
+    // If auth error, try running `claude auth status` to trigger CLI's own token refresh, then retry once
+    if (data.error?.type === 'authentication_error' || (data.error && !data.five_hour && !data.seven_day)) {
+      try {
+        execFileSync('claude', ['auth', 'status'], { encoding: 'utf8', timeout: 10000 })
+        await new Promise(r => setTimeout(r, 800))
+        oauth = getClaudeOAuth()
+        if (oauth?.accessToken) data = doFetch(oauth.accessToken)
+      } catch {}
+    }
+    if (data.error) return { ok: false, error: data.error?.message || 'token可能已过期，发条消息后再试' }
     const KEYS = { five_hour: '5 小时', seven_day: '7 天总量', seven_day_sonnet: '7 天 Sonnet' }
     const windows = {}
     for (const [key, label] of Object.entries(KEYS)) {
@@ -1158,9 +1112,9 @@ app.delete('/api/memories/:id', async (req, res) => {
 app.post('/api/memories/summarize', async (req, res) => {
   try {
     const { data: recent } = await supabase.from('messages')
-      .select('role, content').eq('session_id', 'default')
+      .select('role, content')
       .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
-      .order('created_at', { ascending: true }).limit(80)
+      .order('created_at', { ascending: true }).limit(120)
     if (!recent || recent.length < 4) return res.json({ added: 0, msg: '最近聊天太少，没有足够内容' })
     const transcript = recent.map(m => `${m.role === 'user' ? '小好' : '小克'}：${m.content}`).join('\n')
     const raw = await askClaude(

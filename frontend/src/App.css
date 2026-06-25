@@ -1849,7 +1849,7 @@ button.diary-mood-btn {
 .home-wishes {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 20px;
 }
 
 .wish-item {
