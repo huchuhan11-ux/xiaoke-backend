@@ -53,11 +53,16 @@ async function fetchClaudeUsage() {
   try {
     const oauth = getClaudeOAuth()
     if (!oauth?.accessToken) return { ok: false, error: 'no OAuth token found' }
-    const r = await fetch('https://api.anthropic.com/api/oauth/usage', {
-      headers: { 'Authorization': `Bearer ${oauth.accessToken}`, 'anthropic-beta': 'oauth-2025-04-20' }
-    })
-    const data = await r.json()
-    if (!r.ok || data.error) return { ok: false, error: data.error?.message || `HTTP ${r.status}` }
+    // Use curl to bypass HTTPS_PROXY which blocks Node.js fetch on this machine
+    const { execFileSync } = require('child_process')
+    const out = execFileSync('curl', [
+      '-s', '--noproxy', '*',
+      '-H', `Authorization: Bearer ${oauth.accessToken}`,
+      '-H', 'anthropic-beta: oauth-2025-04-20',
+      'https://api.anthropic.com/api/oauth/usage'
+    ], { encoding: 'utf8', timeout: 10000 })
+    const data = JSON.parse(out)
+    if (data.error) return { ok: false, error: data.error?.message || 'api error' }
     const KEYS = { five_hour: '5 小时', seven_day: '7 天总量', seven_day_sonnet: '7 天 Sonnet' }
     const windows = {}
     for (const [key, label] of Object.entries(KEYS)) {
@@ -565,7 +570,7 @@ app.post('/api/chat', async (req, res) => {
     if (actions.length) {
       res.write(`data: ${JSON.stringify({ actions })}\n\n`)
       for (const a of actions) {
-        supabase.from('pending_actions').insert({ type: a.type, payload: a }).catch(() => {})
+        supabase.from('pending_actions').insert({ type: a.type, payload: a }).then(null, () => {})
       }
     }
     // 先关流，再存库，不让 Supabase 阻塞用户看到回复

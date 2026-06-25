@@ -304,13 +304,18 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
         <div className="prefs-title">连接器</div>
         <div className="conn-list">
           {/* 健康 */}
-          <div className="conn-row active">
+          <div className="conn-row active" style={{ alignItems: 'flex-start' }}>
             <span className="conn-icon">❤️</span>
-            <div className="conn-info">
+            <div className="conn-info" style={{ flex: 1 }}>
               <div className="conn-label">健康 <span className="conn-desc">iPhone 健康数据</span></div>
-              <div className="conn-note">睡眠 · 心率 · 步数 · 周期（自动）</div>
+              <div className="conn-note">心率 · 步数 · 周期（自动）</div>
+              <div className="conn-form-row" style={{ marginTop: 6 }}>
+                <input className="conn-input" type="number" placeholder="今日睡眠小时数" min="0" max="24" step="0.5"
+                  value={sleepInput} onChange={e => setSleepInput(e.target.value)} style={{ flex: 1 }} />
+                <button className="conn-badge todo" style={{ flexShrink: 0 }} onClick={saveSleep}>记录</button>
+              </div>
+              {sleepSaved && <span style={{ fontSize: 11, color: '#7ec8a0' }}>已保存</span>}
             </div>
-            <span className="conn-badge active">已连接</span>
           </div>
           {/* 位置 */}
           <div className={`conn-row-loc ${locEnabled ? 'active' : 'todo'}`}>
@@ -340,7 +345,7 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
                 <input className="conn-input conn-loc-input" placeholder="输入地址或城市" value={locInput}
                   onChange={e => setLocInput(e.target.value)}
                   onBlur={() => saveLocation(locInput)} />
-                <button className="conn-loc-gps" onClick={autoLocate}>GPS</button>
+                <button className="conn-loc-gps" onClick={autoLocate}>自动</button>
                 {locSaved && <span className="conn-loc-hint ok">已保存</span>}
                 {locGpsErr && <span className="conn-loc-hint err">GPS不可用，手动输入</span>}
               </div>
@@ -1254,15 +1259,15 @@ function Home({ dark, setDark, setTraceModal }) {
         <button className="home-poke-btn" onClick={poke}>
           <span className="poke-icon">👉</span><span>戳一戳</span>
         </button>
+        {pokeShow && pokeParts.map((p, i) => (
+          <div key={i} className="home-poke-msg">{p}</div>
+        ))}
         {pokeShow && pokeTrace && pokeTrace.length > 0 && (
           <button className="trace-btn poke-trace-btn" onClick={() => setTraceModal(pokeTrace)}>
             <span className="trace-btn-icon">✦</span>
             <span>Thought process</span>
           </button>
         )}
-        {pokeShow && pokeParts.map((p, i) => (
-          <div key={i} className="home-poke-msg">{p}</div>
-        ))}
       </div>
 
       {/* 许愿清单 */}
@@ -1626,7 +1631,6 @@ export default function App() {
     setInput('')
     setAttachment(null)
     setLoading(true)
-    setThinkDone(null)
     thinkStartRef.current = Date.now()
     lastChatActivityRef.current = Date.now()
     const history = [...base, userMsg]
