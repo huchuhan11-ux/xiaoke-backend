@@ -449,7 +449,7 @@ function cliBuildEnv() {
   env.ANTHROPIC_DEFAULT_OPUS_MODEL = ''
   env.ANTHROPIC_DEFAULT_HAIKU_MODEL = ''
   env.ANTHROPIC_MODEL = ''
-  delete env.ANTHROPIC_API_KEY
+  // Keep ANTHROPIC_API_KEY from .env so subprocess authenticates via API key (not OAuth)
   return env
 }
 
