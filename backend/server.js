@@ -16,6 +16,7 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 const PROJECT_ROOT = path.join(__dirname, '..')
 const FRONTEND_DIST = path.join(PROJECT_ROOT, 'frontend', 'dist')
 
+
 let memoryCache = ''
 let lastFetch = 0
 let rateLimitCache = {}
@@ -76,7 +77,7 @@ async function fetchClaudeUsage() {
     // If auth error, try running `claude auth status` to trigger CLI's own token refresh, then retry once
     if (data.error?.type === 'authentication_error' || (data.error && !data.five_hour && !data.seven_day)) {
       try {
-        execFileSync('claude', ['auth', 'status'], { encoding: 'utf8', timeout: 10000 })
+        execFileSync('claude', ['auth', 'status'], { encoding: 'utf8', timeout: 10000, env: cliBuildEnv() })
         await new Promise(r => setTimeout(r, 800))
         oauth = getClaudeOAuth()
         if (oauth?.accessToken) data = doFetch(oauth.accessToken)
@@ -441,10 +442,14 @@ function buildPrefsPrompt(prefs) {
 
 function cliBuildEnv() {
   const env = { ...process.env }
-  // 清掉 API key / DeepSeek 路由，让子进程用 Claude 订阅 OAuth
+  // Explicitly set these so settings.json DeepSeek routing can't override them (CLI respects pre-set vars)
+  env.ANTHROPIC_BASE_URL = 'https://api.anthropic.com'
+  env.ANTHROPIC_AUTH_TOKEN = ''
+  env.ANTHROPIC_DEFAULT_SONNET_MODEL = ''
+  env.ANTHROPIC_DEFAULT_OPUS_MODEL = ''
+  env.ANTHROPIC_DEFAULT_HAIKU_MODEL = ''
+  env.ANTHROPIC_MODEL = ''
   delete env.ANTHROPIC_API_KEY
-  delete env.ANTHROPIC_BASE_URL
-  delete env.ANTHROPIC_AUTH_TOKEN
   return env
 }
 
