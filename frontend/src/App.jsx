@@ -1780,8 +1780,11 @@ export default function App() {
                   const newId = Date.now() + (Math.random() * 999 | 0)
                   setMessages(prev => [...prev, { id: newId, role: 'assistant', content: '' }])
                   activeBubbleId = newId
+                  await new Promise(r => setTimeout(r, 500))
                 }
-                setMessages(prev => prev.map(msg => msg.id === activeBubbleId ? { ...msg, content: segmentContent } : msg))
+                // 隐藏末尾不完整的 [MSG] token（如 "[M", "[MS"）防止闪烁
+                const display = segmentContent.replace(/\[M[A-Z]{0,3}$/, '')
+                setMessages(prev => prev.map(msg => msg.id === activeBubbleId ? { ...msg, content: display } : msg))
               }
             } catch {}
           }

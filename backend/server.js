@@ -246,6 +246,8 @@ const TRACE_INSTRUCTION = `
 
 【Notion记录】需要记录到 Notion 时，输出 [NOTION:页面标题|正文内容]。系统会自动创建页面。
 
+【禁止输出XML】绝对不能在回复正文中输出任何 XML 标签、DSML、function_calls、tool_calls 或 invoke 格式。如需说明功能是否可用，用自然语言描述即可，不要用任何尖括号标签。
+
 `
 
 function extractTrace(fullText) {
@@ -319,6 +321,44 @@ async function createNotionPage(title, content) {
     properties: { title: { title: [{ text: { content: title || '无标题' } }] } },
     children: content ? [{ object: 'block', type: 'paragraph', paragraph: { rich_text: [{ type: 'text', text: { content } }] } }] : []
   })
+}
+
+// 过滤掉模型可能在回复文本中输出的 DSML/function_calls XML 块（工具调用内容不应显示给用户）
+function makeDsmlFilter(onText) {
+  let buf = ''
+  let depth = 0  // 0=正常文本 >0=在DSML块内
+  const process = () => {
+    while (true) {
+      if (depth === 0) {
+        const d = buf.indexOf('<||DSML||')
+        const f = buf.indexOf('<function_calls>')
+        const start = d >= 0 && (f < 0 || d < f) ? d : f >= 0 ? f : -1
+        if (start < 0) {
+          const safe = buf.slice(0, Math.max(0, buf.length - 20))
+          if (safe) onText(safe)
+          buf = buf.slice(safe.length)
+          break
+        }
+        if (start > 0) onText(buf.slice(0, start))
+        buf = buf.slice(start)
+        depth = 1
+      } else {
+        const closeD = buf.indexOf('</||DSML||tool_calls>')
+        const closeF = buf.indexOf('</function_calls>')
+        const close = closeD >= 0 && (closeF < 0 || closeD < closeF)
+          ? { idx: closeD, len: '</||DSML||tool_calls>'.length }
+          : closeF >= 0 ? { idx: closeF, len: '</function_calls>'.length } : null
+        if (!close) break
+        buf = buf.slice(close.idx + close.len)
+        while (buf[0] === '\n' || buf[0] === '\r' || buf[0] === ' ') buf = buf.slice(1)
+        depth = 0
+      }
+    }
+  }
+  return {
+    write: chunk => { buf += chunk; process() },
+    flush: () => { if (depth === 0 && buf) onText(buf); buf = ''; depth = 0 }
+  }
 }
 
 // 流式场景下把 <trace> 块从增量文本里摘出来，剩下的再继续正常转发
@@ -634,13 +674,15 @@ app.post('/api/chat', async (req, res) => {
     }
     const transcript = messages.map(m => `${m.role === 'user' ? '小好' : '小克'}：${m.content}`).join('\n\n') + attachNote
     const context = buildRealContext()
+    const dsmlFilter = makeDsmlFilter(text => res.write(`data: ${JSON.stringify({ text })}\n\n`))
     const splitter = makeTraceSplitter(
-      text => res.write(`data: ${JSON.stringify({ text })}\n\n`),
+      text => dsmlFilter.write(text),
       trace => res.write(`data: ${JSON.stringify({ trace })}\n\n`)
     )
     const prefsPrompt = buildPrefsPrompt(preferences)
     const fullContent = await streamClaude(transcript, memoryCache + TRACE_INSTRUCTION + context + prefsPrompt, splitter, model)
     splitter.flush()
+    dsmlFilter.flush()
     const { trace, body: rawBody } = extractTrace(fullContent)
     console.log('TRACE:', trace ? `yes (${(trace[0] || '').slice(0, 60)}...)` : 'null — model skipped trace')
     const { actions, clean: body } = extractActions(rawBody)
@@ -1111,11 +1153,21 @@ app.delete('/api/memories/:id', async (req, res) => {
 
 app.post('/api/memories/summarize', async (req, res) => {
   try {
-    const { data: recentDesc } = await supabase.from('messages')
-      .select('role, content')
-      .order('created_at', { ascending: false }).limit(50)
-    if (!recentDesc || recentDesc.length < 4) return res.json({ added: 0, msg: '最近聊天太少，没有足够内容' })
-    const recent = recentDesc.reverse()
+    const { data: msgRows } = await supabase.from('messages')
+      .select('role, content, session_id')
+      .order('created_at', { ascending: false }).limit(300)
+    if (!msgRows || msgRows.length < 4) return res.json({ added: 0, msg: '最近聊天太少，没有足够内容' })
+    // 取最近5个会话的消息
+    const topSessions = []
+    const seenSessions = new Set()
+    for (const row of msgRows) {
+      if (row.session_id && !seenSessions.has(row.session_id)) {
+        seenSessions.add(row.session_id)
+        topSessions.push(row.session_id)
+        if (topSessions.length >= 5) break
+      }
+    }
+    const recent = msgRows.filter(m => topSessions.includes(m.session_id)).reverse()
     const transcript = recent.map(m => `${m.role === 'user' ? '小好' : '小克'}：${m.content}`).join('\n')
     const raw = await askClaude(
       `${transcript}\n\n从以上对话中，提炼出最多3条最值得长期记住的内容（重要的约定、值得记住的瞬间、规律、梗）。如果没有特别值得记的就少提炼甚至不提炼。只输出JSON数组，不要markdown代码块，不要多余解释：[{"title":"简短标题不超过15字","content":"记忆内容第一人称不超过50字"},...]`,
