@@ -442,14 +442,15 @@ function buildPrefsPrompt(prefs) {
 
 function cliBuildEnv() {
   const env = { ...process.env }
-  // Explicitly set these so settings.json DeepSeek routing can't override them (CLI respects pre-set vars)
+  // Pre-set these vars so settings.json env-block can't inject DeepSeek routing (CLI skips already-set vars)
   env.ANTHROPIC_BASE_URL = 'https://api.anthropic.com'
   env.ANTHROPIC_AUTH_TOKEN = ''
   env.ANTHROPIC_DEFAULT_SONNET_MODEL = ''
   env.ANTHROPIC_DEFAULT_OPUS_MODEL = ''
   env.ANTHROPIC_DEFAULT_HAIKU_MODEL = ''
   env.ANTHROPIC_MODEL = ''
-  // Keep ANTHROPIC_API_KEY from .env so subprocess authenticates via API key (not OAuth)
+  // Must delete API key so CLI uses OAuth subscription (not pay-per-use API billing)
+  delete env.ANTHROPIC_API_KEY
   return env
 }
 
