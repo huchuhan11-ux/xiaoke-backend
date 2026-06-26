@@ -1820,7 +1820,10 @@ export default function App() {
         backgroundPosition: 'center'
       } : {}}
     >
-      <div className="main" style={(view === 'chat' && bgImage) ? { background: 'transparent' } : {}}>
+      <div className="main" style={
+        (view === 'chat' && bgImage) ? { background: 'transparent' } :
+        view === 'home' ? { background: '#fde4ec' } : {}
+      }>
         {view === 'home' && <Home dark={dark} setDark={setDark} setTraceModal={setTraceModal} />}
         <div className="chat" style={{ display: view === 'chat' ? 'flex' : 'none' }}>
             {sessionDrawerOpen && <div className="session-overlay" onClick={() => setSessionDrawerOpen(false)} />}

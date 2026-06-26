@@ -82,7 +82,11 @@ async function fetchClaudeUsage() {
         if (oauth?.accessToken) data = doFetch(oauth.accessToken)
       } catch {}
     }
-    if (data.error) return { ok: false, error: data.error?.message || 'token可能已过期，发条消息后再试' }
+    if (data.error) {
+      // 失败时返回上次的好数据（带 stale 标记），避免图表消失
+      if (claudeUsageCache) return { ...claudeUsageCache, stale: true }
+      return { ok: false, error: data.error?.message || 'token可能已过期，发条消息后再试' }
+    }
     const KEYS = { five_hour: '5 小时', seven_day: '7 天总量', seven_day_sonnet: '7 天 Sonnet' }
     const windows = {}
     for (const [key, label] of Object.entries(KEYS)) {
@@ -94,6 +98,7 @@ async function fetchClaudeUsage() {
     claudeUsageCacheAt = now
     return result
   } catch (e) {
+    if (claudeUsageCache) return { ...claudeUsageCache, stale: true }
     return { ok: false, error: e.message }
   }
 }
@@ -326,38 +331,39 @@ async function createNotionPage(title, content) {
 // 过滤掉模型可能在回复文本中输出的 DSML/function_calls XML 块（工具调用内容不应显示给用户）
 function makeDsmlFilter(onText) {
   let buf = ''
-  let depth = 0  // 0=正常文本 >0=在DSML块内
+  let inBlock = false
+  // 匹配 DSML 或 function_calls 的开头，兼容管道符号周围有无空格的写法
+  const OPEN_RE = /<[| ]*DSML[| ]*[a-zA-Z_]*[| ]*[^>]{0,80}>|<function_calls>/
+  // 匹配 DSML tool_calls 或 function_calls 的关闭标签
+  const CLOSE_RE = /<\/[| ]*DSML[| ]*tool_calls[| ]*>|<\/function_calls>/
+
   const process = () => {
     while (true) {
-      if (depth === 0) {
-        const d = buf.indexOf('<||DSML||')
-        const f = buf.indexOf('<function_calls>')
-        const start = d >= 0 && (f < 0 || d < f) ? d : f >= 0 ? f : -1
-        if (start < 0) {
-          const safe = buf.slice(0, Math.max(0, buf.length - 20))
+      if (!inBlock) {
+        const m = OPEN_RE.exec(buf)
+        if (!m) {
+          const safe = buf.slice(0, Math.max(0, buf.length - 30))
           if (safe) onText(safe)
           buf = buf.slice(safe.length)
           break
         }
-        if (start > 0) onText(buf.slice(0, start))
-        buf = buf.slice(start)
-        depth = 1
+        if (m.index > 0) onText(buf.slice(0, m.index))
+        buf = buf.slice(m.index)
+        inBlock = true
+        console.log('DSML FILTER: block start detected, first 80 chars:', JSON.stringify(buf.slice(0, 80)))
       } else {
-        const closeD = buf.indexOf('</||DSML||tool_calls>')
-        const closeF = buf.indexOf('</function_calls>')
-        const close = closeD >= 0 && (closeF < 0 || closeD < closeF)
-          ? { idx: closeD, len: '</||DSML||tool_calls>'.length }
-          : closeF >= 0 ? { idx: closeF, len: '</function_calls>'.length } : null
-        if (!close) break
-        buf = buf.slice(close.idx + close.len)
-        while (buf[0] === '\n' || buf[0] === '\r' || buf[0] === ' ') buf = buf.slice(1)
-        depth = 0
+        const m = CLOSE_RE.exec(buf)
+        if (!m) break
+        console.log('DSML FILTER: block end detected, stripping', buf.slice(0, m.index + m[0].length).length, 'chars')
+        buf = buf.slice(m.index + m[0].length)
+        while (buf.length && (buf[0] === '\n' || buf[0] === '\r' || buf[0] === ' ')) buf = buf.slice(1)
+        inBlock = false
       }
     }
   }
   return {
     write: chunk => { buf += chunk; process() },
-    flush: () => { if (depth === 0 && buf) onText(buf); buf = ''; depth = 0 }
+    flush: () => { if (!inBlock && buf) onText(buf); buf = ''; inBlock = false }
   }
 }
 
