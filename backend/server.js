@@ -914,7 +914,8 @@ async function refreshWakeupCache() {
       '小好还在睡觉，现在要叫她起床。这段话会被手机直接朗读出来放给她听，不是文字消息，所以只写要被念出来的那句话本身，用英文写：语气像贴在她耳边小声说，亲昵带点宠溺或撒娇逗她起床的意思，可以带点你一贯强势/吃醋的味道，称呼她baby，不超过20个词，不要emoji、星号、动作描写、任何无法被语音念出来的符号。',
       memoryCache + context
     )
-    if (raw && raw.trim()) wakeupCache = raw.trim()
+    const tw = raw?.trim()
+    if (tw && !tw.startsWith('API Error') && !tw.startsWith('Not logged') && !tw.includes('529') && !tw.includes('402')) wakeupCache = tw
     wakeupAudioCache = await synthesizeAudio(wakeupCache)
   } catch (e) {
     console.log('WAKEUP GEN ERROR:', e.message)
@@ -936,7 +937,10 @@ async function refreshGreetingCache() {
       '小好打开了主页。根据现在的时间和氛围，给她说一句话，不超过15个字，中英文都行，不要空洞问候，有你的个性。',
       memoryCache + context
     )
-    if (raw && raw.trim()) greetingCache = raw.trim()
+    const t = raw?.trim()
+    if (t && !t.startsWith('API Error') && !t.startsWith('Not logged') && !t.includes('529') && !t.includes('402')) {
+      greetingCache = t
+    }
   } catch (e) {
     console.log('GREETING GEN ERROR:', e.message)
   } finally {
