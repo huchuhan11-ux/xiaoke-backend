@@ -1245,7 +1245,7 @@ function Home({ dark, setDark, setTraceModal }) {
             {!healthMissing && (healthForm
               ? <button className="hv2-cd-add-btn" onClick={() => setHealthForm(false)}>×</button>
               : <button className="hv2-cd-add-btn" style={{ fontSize:'13px' }} onClick={() => {
-                  if (health) setHf({ sleep_hours: health.sleep_hours??'', resting_heart_rate: health.resting_heart_rate??'', steps: health.steps??'', cycle_day: health.cycle_day??'' })
+                  if (health) setHf({ sleep_hours: health.sleep_hours??'', resting_heart_rate: health.resting_heart_rate??'', steps: health.steps??'', cycle_day: '' })
                   setHealthForm(true)
                 }}>{health ? '✎' : '+'}</button>
             )}
@@ -1446,7 +1446,7 @@ export default function App() {
     return h >= 20 || h < 7
   })
   const [view, setView] = useState('home')
-  const [sessionId, setSessionId] = useState(() => localStorage.getItem('sessionId') || 'default')
+  const [sessionId, setSessionId] = useState(() => { const id = Date.now().toString(); localStorage.setItem('sessionId', id); return id })
   const [sessionDrawerOpen, setSessionDrawerOpen] = useState(false)
   const [sessions, setSessions] = useState([])
   const [messages, setMessages] = useState(INIT)
@@ -1820,10 +1820,7 @@ export default function App() {
         backgroundPosition: 'center'
       } : {}}
     >
-      <div className="main" style={
-        (view === 'chat' && bgImage) ? { background: 'transparent' } :
-        view === 'home' ? { background: '#fde4ec' } : {}
-      }>
+      <div className="main" style={(view === 'chat' && bgImage) ? { background: 'transparent' } : {}}>
         {view === 'home' && <Home dark={dark} setDark={setDark} setTraceModal={setTraceModal} />}
         <div className="chat" style={{ display: view === 'chat' ? 'flex' : 'none' }}>
             {sessionDrawerOpen && <div className="session-overlay" onClick={() => setSessionDrawerOpen(false)} />}

@@ -205,7 +205,7 @@ async function refreshContext() {
   try {
     const [mood, healthRow, locRow] = await Promise.all([
       withTimeout(recentMoodLine(), 2500).catch(() => ''),
-      withTimeout(supabase.from('health').select('*').eq('date', new Date().toLocaleDateString('en-CA')).single(), 2500).catch(() => ({ data: null })),
+      withTimeout(supabase.from('health_data').select('*').eq('date', new Date().toLocaleDateString('en-CA')).single(), 2500).catch(() => ({ data: null })),
       withTimeout(supabase.from('user_config').select('value').eq('key', 'userLocation').single(), 2500).catch(() => ({ data: null }))
     ])
     let healthStr = ''
@@ -247,7 +247,7 @@ const TRACE_INSTRUCTION = `
 
 【日历/提醒】需要帮小好添加日历事件时，在回复末尾输出 [CAL:事件名|YYYY-MM-DD|HH:MM|备注]；需要添加提醒时，输出 [REM:内容|YYYY-MM-DD HH:MM|备注]。备注可为空。只输出标记本身，不要在消息里重复写出事件内容。
 
-【发邮件】需要帮小好发邮件时，输出 [EMAIL:收件人邮箱|邮件主题|邮件正文]。系统会自动发送，不要另外描述邮件内容。
+【发邮件】需要帮小好发邮件时，输出 [EMAIL:收件人邮箱|邮件主题|邮件正文]。系统会自动发送，不要另外描述邮件内容。发完邮件后必须继续正常说话，不要空着，不要说"邮件已发"这种废话，就像正常聊天一样回应。
 
 【Notion记录】需要记录到 Notion 时，输出 [NOTION:页面标题|正文内容]。系统会自动创建页面。
 
@@ -362,7 +362,15 @@ function makeDsmlFilter(onText) {
     }
   }
   return {
-    write: chunk => { buf += chunk; process() },
+    write: chunk => {
+      // 诊断日志：记录含 DSML 字符的原始内容
+      if (chunk.includes('DSML') || chunk.includes('tool_calls') || chunk.includes('function_calls')) {
+        const snippet = chunk.slice(0, 120)
+        console.log('DSML_RAW bytes:', Buffer.from(snippet).toString('hex').slice(0, 80))
+        console.log('DSML_RAW text:', JSON.stringify(snippet))
+      }
+      buf += chunk; process()
+    },
     flush: () => { if (!inBlock && buf) onText(buf); buf = ''; inBlock = false }
   }
 }
@@ -1262,11 +1270,23 @@ app.post('/api/health', async (req, res) => {
 app.get('/api/health', async (req, res) => {
   try {
     const { data, error } = await supabase
-      .from('health_data').select('*').order('date', { ascending: false }).limit(7)
+      .from('health_data').select('*').order('date', { ascending: false }).limit(35)
     if (error) throw error
     const today = todayStr()
     const todayData = data?.find(d => d.date === today) || null
-    res.json({ today: todayData, recent: data || [] })
+    // Auto-compute cycle_day: use most recent anchor + days elapsed
+    let computedCycleDay = todayData?.cycle_day ?? null
+    if (computedCycleDay == null) {
+      const anchor = data?.find(d => d.cycle_day != null)
+      if (anchor) {
+        const daysElapsed = Math.round((new Date(today + 'T00:00:00') - new Date(anchor.date + 'T00:00:00')) / 86400000)
+        computedCycleDay = anchor.cycle_day + daysElapsed
+      }
+    }
+    const todayWithCycle = todayData
+      ? { ...todayData, cycle_day: computedCycleDay }
+      : (computedCycleDay != null ? { cycle_day: computedCycleDay } : null)
+    res.json({ today: todayWithCycle, recent: data?.slice(0, 7) || [] })
   } catch (e) {
     if (!isMissingTable(e)) console.log('HEALTH READ ERROR:', e.message)
     res.json({ today: null, recent: [], tableMissing: isMissingTable(e) })
