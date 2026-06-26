@@ -981,7 +981,7 @@ function Records() {
     const list = isLetter ? letterEntries : diaryEntries
     return (
       <div className="journal">
-        <div className="records-detail-wrap">
+        <div className="records-detail-wrap" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: '8px 0 0' }}>
           <div className="records-section-nav">
             <button className="records-back-btn" onClick={() => setActiveSection(null)}>‹ 记录</button>
             <span className="records-nav-title">{isLetter ? '信' : '日记'}</span>
@@ -991,7 +991,7 @@ function Records() {
               </button>
             )}
           </div>
-          <div className="records-section-feed" style={{ marginTop: '4px' }}>
+          <div className="records-section-feed">
             {list.length === 0 ? (
               <div className="records-empty-sm">{isLetter ? '还没有信' : '还没有日记'}</div>
             ) : (
@@ -1749,6 +1749,9 @@ export default function App() {
       let rawContent = ''
       setMessages(prev => [...prev, aiMsg])
       let buffer = ''
+      let activeBubbleId = aiMsg.id
+      let segmentContent = ''
+      const MSG_SPLIT = /\[MSG?\]|\[M[A-Z]*G\]/
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
@@ -1761,37 +1764,37 @@ export default function App() {
               const payload = JSON.parse(line.slice(6))
               if (payload.trace) {
                 aiMsg = { ...aiMsg, trace: payload.trace }
+                setMessages(prev => prev.map(m => m.id === aiMsg.id ? aiMsg : m))
               } else if (payload.status) {
                 setPendingActions(prev => [...prev, { type: 'status', ...payload.status }])
               } else if (payload.actions) {
                 setPendingActions(prev => [...prev, ...payload.actions])
-              } else {
+              } else if (payload.text) {
                 rawContent += payload.text
-                aiMsg = { ...aiMsg, content: rawContent.replace(/\[MSG?\]|\[M[A-Z]*G\]/g, '').replace(/^\s+/, '') }
+                segmentContent += payload.text
+                while (MSG_SPLIT.test(segmentContent)) {
+                  const mMatch = segmentContent.match(MSG_SPLIT)
+                  const before = segmentContent.slice(0, mMatch.index).trim()
+                  segmentContent = segmentContent.slice(mMatch.index + mMatch[0].length)
+                  if (before) setMessages(prev => prev.map(msg => msg.id === activeBubbleId ? { ...msg, content: before } : msg))
+                  const newId = Date.now() + (Math.random() * 999 | 0)
+                  setMessages(prev => [...prev, { id: newId, role: 'assistant', content: '' }])
+                  activeBubbleId = newId
+                }
+                setMessages(prev => prev.map(msg => msg.id === activeBubbleId ? { ...msg, content: segmentContent } : msg))
               }
-              setMessages(prev => prev.map(m => m.id === aiMsg.id ? aiMsg : m))
             } catch {}
           }
         }
       }
-      // split [MSG] into multiple bubbles — also handle [MG] model typos
-      const MSG_RE = /\[MSG?\]|\[M[A-Z]*G\]/g
-      const msgParts = rawContent.split(MSG_RE).map(p => p.trim()).filter(Boolean)
       const secs = thinkStartRef.current ? Math.round((Date.now() - thinkStartRef.current) / 1000) : null
-      if (msgParts.length > 1) {
-        const ts = Date.now()
-        // Show first bubble immediately, stagger the rest (feels like messages arriving one by one)
-        setMessages(prev => [...prev.filter(m => m.id !== aiMsg.id),
-          { id: ts, role: 'assistant', content: msgParts[0], trace: aiMsg.trace, thinkSecs: secs != null ? secs : undefined }
-        ])
-        for (let i = 1; i < msgParts.length; i++) {
-          await new Promise(r => setTimeout(r, 700))
-          const part = msgParts[i]
-          setMessages(prev => [...prev, { id: ts + i, role: 'assistant', content: part }])
-        }
-      } else if (secs != null) {
-        setMessages(prev => prev.map(m => m.id === aiMsg.id ? { ...m, thinkSecs: secs } : m))
-      }
+      const finalContent = segmentContent.replace(MSG_SPLIT, '').trim()
+      setMessages(prev => prev.map(msg => {
+        let u = msg
+        if (msg.id === activeBubbleId) u = { ...u, content: finalContent }
+        if (msg.id === aiMsg.id && secs != null) u = { ...u, thinkSecs: secs }
+        return u
+      }))
     } catch (e) {
       if (e?.name === 'AbortError') {
         setMessages(prev => [...prev, { id: Date.now(), role: 'assistant', content: '等太久没反应，网络可能卡了，待会儿再试。' }])

@@ -2968,6 +2968,10 @@ button.diary-mood-btn {
 }
 
 .records-section-feed {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 16px 32px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -3125,6 +3129,7 @@ button.diary-mood-btn {
 
 .jcard-reply-input {
   flex: 1;
+  min-width: 0;
   border: 1px solid rgba(192,139,114,0.28);
   border-radius: 20px;
   padding: 8px 14px;
@@ -3138,15 +3143,20 @@ button.diary-mood-btn {
 .jcard-reply-input:focus { border-color: rgba(192,139,114,0.5); }
 
 .jcard-reply-btn {
-  padding: 8px 16px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
   background: #c08b72;
   color: #fff;
   border: none;
-  border-radius: 20px;
-  font-size: 13px;
+  border-radius: 50%;
+  font-size: 11px;
   font-family: inherit;
   cursor: pointer;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Bottom compose bar */

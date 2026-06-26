@@ -1111,11 +1111,11 @@ app.delete('/api/memories/:id', async (req, res) => {
 
 app.post('/api/memories/summarize', async (req, res) => {
   try {
-    const { data: recent } = await supabase.from('messages')
+    const { data: recentDesc } = await supabase.from('messages')
       .select('role, content')
-      .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
-      .order('created_at', { ascending: true }).limit(120)
-    if (!recent || recent.length < 4) return res.json({ added: 0, msg: '最近聊天太少，没有足够内容' })
+      .order('created_at', { ascending: false }).limit(50)
+    if (!recentDesc || recentDesc.length < 4) return res.json({ added: 0, msg: '最近聊天太少，没有足够内容' })
+    const recent = recentDesc.reverse()
     const transcript = recent.map(m => `${m.role === 'user' ? '小好' : '小克'}：${m.content}`).join('\n')
     const raw = await askClaude(
       `${transcript}\n\n从以上对话中，提炼出最多3条最值得长期记住的内容（重要的约定、值得记住的瞬间、规律、梗）。如果没有特别值得记的就少提炼甚至不提炼。只输出JSON数组，不要markdown代码块，不要多余解释：[{"title":"简短标题不超过15字","content":"记忆内容第一人称不超过50字"},...]`,
