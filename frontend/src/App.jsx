@@ -1665,7 +1665,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    document.body.style.background = dark ? '#141210' : '#fdf6f0'
+    document.body.style.background = dark ? '#171317' : '#fdf6f0'
   }, [dark])
 
   useEffect(() => {
