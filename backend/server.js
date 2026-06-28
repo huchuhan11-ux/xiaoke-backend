@@ -274,9 +274,11 @@ const TRACE_INSTRUCTION = `
 
 function extractTrace(fullText) {
   const m = fullText.match(/<trace>([\s\S]*?)<\/trace>\s*\n?/i)
-  if (!m) return { trace: null, body: fullText.trim() }
-  const traceText = m[1].trim()
-  const body = (fullText.slice(0, m.index) + fullText.slice(m.index + m[0].length)).trim()
+  const traceText = m?.[1]?.trim() || ''
+  const body = fullText
+    .replace(/<trace\b[^>]*>[\s\S]*?<\/trace>\s*/gi, '')
+    .replace(/<\/?trace\b[^>]*>/gi, '')
+    .trim()
   return { trace: traceText ? [traceText] : null, body }
 }
 
@@ -384,9 +386,9 @@ function makeDsmlFilter(onText) {
   let buf = ''
   let inBlock = false
   // 匹配 DSML 或 function_calls 的开头，兼容管道符号周围有无空格的写法
-  const OPEN_RE = /<[| ]*DSML[| ]*[a-zA-Z_]*[| ]*[^>]{0,80}>|<function_calls>/
+  const OPEN_RE = /<[| ]*DSML[| ]*[a-zA-Z_]*[| ]*[^>]{0,80}>|<function_calls>|<trace\b[^>]*>/i
   // 匹配 DSML tool_calls 或 function_calls 的关闭标签
-  const CLOSE_RE = /<\/[| ]*DSML[| ]*tool_calls[| ]*>|<\/function_calls>/
+  const CLOSE_RE = /<\/[| ]*DSML[| ]*tool_calls[| ]*>|<\/function_calls>|<\/trace>/i
 
   const process = () => {
     while (true) {
@@ -444,7 +446,9 @@ function makeTraceSplitter(onText, onTrace) {
       const text = buffer.slice(openIdx + 7, closeIdx).trim()
       if (text) onTrace([text])
     }
-    const rest = buffer.slice(closeIdx + 8).replace(/^\s*\n/, '')
+    const before = openIdx === -1 ? buffer.slice(0, closeIdx) : buffer.slice(0, openIdx)
+    const after = buffer.slice(closeIdx + 8)
+    const rest = (before + after).replace(/^\s*\n/, '')
     resolved = true
     buffer = ''
     if (rest) onText(rest)
@@ -958,30 +962,35 @@ app.post('/api/board/:id/comments', async (req, res) => {
 })
 
 // ── 戳一戳 ──
-app.get('/api/poke', async (req, res) => {
-  try {
-    const context = buildRealContext()
-    const raw = await askClaude(
-      '小好戳了你一下，像撒娇一样的小动作，不是有事找你。给一句简短俏皮/宠溺的回应，不超过20字。',
-      memoryCache + context + '\n\n先用 <trace></trace> 写1-2句很短的内心反应，再写正式回应。不要输出其他格式。'
-    )
-    const { trace, body } = extractTrace(raw)
-    if (!body) throw new Error('empty poke result')
-    res.json({ message: body, trace })
-  } catch (e) {
-    console.log('POKE GEN ERROR:', e.message)
+let pokeCache = { message: '又戳我。过来。', trace: null, generated_at: 0 }
+let pokeRefreshPromise = null
+
+async function refreshPokeCache() {
+  if (pokeRefreshPromise) return pokeRefreshPromise
+  pokeRefreshPromise = (async () => {
     try {
-      const { count, error: countErr } = await supabase
-        .from('poke_messages').select('*', { count: 'exact', head: true })
-      if (countErr || !count) return res.json({ message: '想你了' })
-      const offset = Math.floor(Math.random() * count)
-      const { data } = await supabase.from('poke_messages').select('content').range(offset, offset)
-      res.json({ message: data?.[0]?.content || '想你了' })
-    } catch {
-      res.json({ message: '想你了' })
+      const context = buildRealContext()
+      const raw = await askClaude(
+        '小好戳了你一下，像撒娇一样的小动作，不是有事找你。给一句简短俏皮/宠溺的回应，不超过20字。',
+        memoryCache + context + '\n\n先用 <trace></trace> 写1-2句很短的内心反应，再写正式回应。不要输出其他格式。'
+      )
+      const { trace, body } = extractTrace(raw)
+      if (body) pokeCache = { message: body, trace, generated_at: Date.now() }
+    } catch (e) {
+      console.log('POKE GEN ERROR:', e.message)
+    } finally {
+      pokeRefreshPromise = null
     }
-  }
+    return pokeCache
+  })()
+  return pokeRefreshPromise
+}
+
+app.get('/api/poke', (req, res) => {
+  res.json(pokeCache)
+  refreshPokeCache()
 })
+setTimeout(refreshPokeCache, 3000)
 
 // ── 早安唤醒：Shortcuts 定时调用，返回一句用于朗读的叫醒语 ──
 // CLI 生成一次要 10+ 秒，等不起，所以走"缓存秒回 + 用完后台刷新下一句"
@@ -1056,9 +1065,9 @@ async function refreshGreetingCache() {
 }
 refreshGreetingCache()
 
-app.get('/api/wakeup', async (req, res) => {
-  await refreshGreetingCache()
+app.get('/api/wakeup', (req, res) => {
   res.json({ text: greetingCache, generated_at: greetingCacheAt })
+  if (req.query.peek !== '1') refreshGreetingCache()
 })
 
 app.post('/api/tts', async (req, res) => {
@@ -1444,7 +1453,11 @@ setInterval(() => {
 }, 60 * 1000)
 
 // ── 前端静态托管（同源，避免手机端 HTTPS 页面调用 HTTP 接口被拦截）──
-app.use(express.static(FRONTEND_DIST))
+app.use(express.static(FRONTEND_DIST, {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('index.html') || filePath.endsWith('sw.js')) res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+  }
+}))
 app.get(/^\/(?!api\/).*/, (req, res) => res.sendFile(path.join(FRONTEND_DIST, 'index.html')))
 
 // ── 主动发消息：每30分钟检查一次，合适时机生成并存入聊天记录 ──

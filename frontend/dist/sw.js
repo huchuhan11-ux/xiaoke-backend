@@ -1,4 +1,4 @@
-const CACHE = 'ourplace-v2'
+const CACHE = 'ourplace-v3'
 
 self.addEventListener('install', () => {
   self.skipWaiting()

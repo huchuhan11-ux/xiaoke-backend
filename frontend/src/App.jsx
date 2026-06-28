@@ -1115,11 +1115,28 @@ function Home({ dark, setDark, setTraceModal }) {
   }, [])
 
   useEffect(() => {
-    fetch(`${API}/api/wakeup?_=${Date.now()}`).then(r => r.json()).then(d => setGreeting(d.text || '')).catch(() => {})
+    let cancelled = false
+    ;(async () => {
+      try {
+        const first = await fetch(`${API}/api/wakeup?_=${Date.now()}`).then(r => r.json())
+        if (cancelled) return
+        setGreeting(first.text || '')
+        const previousStamp = Number(first.generated_at || 0)
+        for (let i = 0; i < 30 && !cancelled; i++) {
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          const fresh = await fetch(`${API}/api/wakeup?peek=1&_=${Date.now()}`).then(r => r.json())
+          if (Number(fresh.generated_at || 0) > previousStamp) {
+            if (!cancelled) setGreeting(fresh.text || '')
+            break
+          }
+        }
+      } catch {}
+    })()
     fetch(`${API}/api/health`).then(r => r.json()).then(d => { setHealth(d.today || null); setHealthMissing(!!d.tableMissing) }).catch(() => {})
     fetch(`${API}/api/countdowns`).then(r => r.json()).then(d => { if (Array.isArray(d)) setItems(d) }).catch(() => {})
     fetch(`${API}/api/wishes`).then(r => r.json()).then(d => { if (Array.isArray(d)) setWishes(d) }).catch(() => {})
     fetch(`${API}/api/weather`).then(r => r.json()).then(d => { if (Array.isArray(d)) setWeather(d) }).catch(() => {})
+    return () => { cancelled = true }
   }, [])
 
   const submitHealth = async () => {
@@ -1791,6 +1808,8 @@ export default function App() {
       const MSG_SPLIT = /\[MSG?\]|\[M[A-Z]*G\]|[。！？!?](?=\s*[^\s[])/
       const ACTION_MARKER = /\[(?:CAL|REM|ALARM|EMAIL|NOTION):[^\]]*\]/g
       const cleanDisplayedSegment = text => text
+        .replace(/<trace\b[^>]*>[\s\S]*?<\/trace>/gi, '')
+        .replace(/<\/?trace\b[^>]*>/gi, '')
         .replace(ACTION_MARKER, '')
         .replace(/\[[A-Z]{0,8}(?::[^\]]*)?$/, '')
       while (true) {
@@ -1805,7 +1824,7 @@ export default function App() {
               const payload = JSON.parse(line.slice(6))
               if (payload.trace) {
                 aiMsg = { ...aiMsg, trace: payload.trace }
-                setMessages(prev => prev.map(m => m.id === aiMsg.id ? aiMsg : m))
+                setMessages(prev => prev.map(m => m.id === aiMsg.id ? { ...m, trace: payload.trace } : m))
               } else if (payload.status) {
                 setPendingActions(prev => [...prev, { ...payload.status, type: 'status', statusType: payload.status.type }])
               } else if (payload.actions) {
@@ -1930,7 +1949,7 @@ export default function App() {
                     <div className={`bubble ${bgImage ? 'bubble-bg' : ''}`}>
                       {m.attachment?.isImage && <img className="msg-img" src={m.attachment.data} alt={m.attachment.name} />}
                       {m.attachment && !m.attachment.isImage && <div className="msg-file-chip">📎 {m.attachment.name}</div>}
-                      {m.content && !m.content.startsWith('[图片:') && !m.content.startsWith('[文件:') ? m.content.replace(/\[MSG?\]|\[M[A-Z]*G\]/g, '').replace(/\[(?:CAL|REM|ALARM|EMAIL|NOTION):[^\]]*\]/g, '').replace(/\[[A-Z]{0,8}(?::[^\]]*)?$/, '').trim() : (!m.attachment ? m.content : null)}
+                      {m.content && !m.content.startsWith('[图片:') && !m.content.startsWith('[文件:') ? m.content.replace(/<trace\b[^>]*>[\s\S]*?<\/trace>/gi, '').replace(/<\/?trace\b[^>]*>/gi, '').replace(/\[MSG?\]|\[M[A-Z]*G\]/g, '').replace(/\[(?:CAL|REM|ALARM|EMAIL|NOTION):[^\]]*\]/g, '').replace(/\[[A-Z]{0,8}(?::[^\]]*)?$/, '').trim() : (!m.attachment ? m.content : null)}
                     </div>
                   </div>
                   {m.id !== 1 && (

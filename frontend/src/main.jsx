@@ -10,6 +10,12 @@ createRoot(document.getElementById('root')).render(
 )
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
+    let reloading = false
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloading) return
+      reloading = true
+      window.location.reload()
+    })
+    navigator.serviceWorker.register('/sw.js').then(reg => reg.update()).catch(() => {})
   })
 }
