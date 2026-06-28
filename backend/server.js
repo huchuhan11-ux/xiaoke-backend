@@ -327,6 +327,40 @@ async function getConfig(key) {
   return data?.value || null
 }
 
+async function readPendingActionQueue() {
+  const value = await getConfig('pendingDeviceActions')
+  return Array.isArray(value) ? value : []
+}
+
+async function writePendingActionQueue(actions) {
+  await supabase.from('user_config').upsert({
+    key: 'pendingDeviceActions',
+    value: actions.slice(-30),
+    updated_at: new Date().toISOString()
+  })
+}
+
+async function enqueueDeviceAction(action) {
+  const actions = await readPendingActionQueue()
+  if (!actions.some(item => item.id === action.id)) {
+    actions.push(action)
+    await writePendingActionQueue(actions)
+  }
+}
+
+app.get('/api/pending-actions', async (req, res) => {
+  try { res.json(await readPendingActionQueue()) }
+  catch { res.json([]) }
+})
+
+app.delete('/api/pending-actions/:id', async (req, res) => {
+  try {
+    const actions = await readPendingActionQueue()
+    await writePendingActionQueue(actions.filter(item => item.id !== req.params.id))
+    res.json({ ok: true })
+  } catch { res.json({ ok: false }) }
+})
+
 async function sendGmail(to, subject, body) {
   const user = await getConfig('gmailUser')
   const pass = await getConfig('gmailPass')
@@ -806,10 +840,14 @@ app.post('/api/chat', async (req, res) => {
     const { trace, body: rawBody } = extractTrace(fullContent)
     console.log('TRACE:', trace ? `yes (${(trace[0] || '').slice(0, 60)}...)` : 'null — model skipped trace')
     const { actions, clean: body } = extractActions(rawBody)
-    const calRem = actions.filter(a => a.type === 'cal' || a.type === 'rem')
+    const calRem = actions.filter(a => a.type === 'cal' || a.type === 'rem').map((a, index) => ({
+      ...a,
+      id: `${Date.now()}-${index}`,
+      created_at: new Date().toISOString()
+    }))
     if (calRem.length) {
       res.write(`data: ${JSON.stringify({ actions: calRem })}\n\n`)
-      for (const a of calRem) supabase.from('pending_actions').insert({ type: a.type, payload: a }).then(null, () => {})
+      for (const a of calRem) enqueueDeviceAction(a).catch(e => console.log('ACTION SYNC ERROR:', e.message))
     }
     for (const a of actions.filter(a => a.type === 'email')) {
       try {

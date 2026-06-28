@@ -1491,6 +1491,7 @@ export default function App() {
   const [messages, setMessages] = useState(INIT)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [thinkingVisible, setThinkingVisible] = useState(false)
   const [pendingActions, setPendingActions] = useState([])
   const thinkStartRef = useRef(null)
   const lastChatActivityRef = useRef(Date.now())
@@ -1501,6 +1502,18 @@ export default function App() {
   const [chatModel, setChatModel] = useState(() => localStorage.getItem('chatModel') === 'opus' ? 'opus' : 'sonnet')
   const [playingId, setPlayingId] = useState(null)
   const audioRef = useRef(null)
+
+  const mergePendingActions = incoming => {
+    if (!Array.isArray(incoming) || incoming.length === 0) return
+    setPendingActions(prev => {
+      const ids = new Set(prev.map(item => item.id).filter(Boolean))
+      return [...prev, ...incoming.filter(item => !item.id || !ids.has(item.id))]
+    })
+  }
+
+  const acknowledgeAction = id => {
+    if (id) fetch(`${API}/api/pending-actions/${encodeURIComponent(id)}`, { method: 'DELETE', keepalive: true }).catch(() => {})
+  }
 
   const playTTS = async (msgId, content) => {
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null }
@@ -1635,6 +1648,20 @@ export default function App() {
     ping()
     const tick = setInterval(ping, 30000)
     return () => clearInterval(tick)
+  }, [])
+
+  useEffect(() => {
+    const poll = () => {
+      if (document.visibilityState !== 'visible') return
+      fetch(`${API}/api/pending-actions?_=${Date.now()}`).then(r => r.json()).then(mergePendingActions).catch(() => {})
+    }
+    poll()
+    const tick = setInterval(poll, 5000)
+    document.addEventListener('visibilitychange', poll)
+    return () => {
+      clearInterval(tick)
+      document.removeEventListener('visibilitychange', poll)
+    }
   }, [])
 
   useEffect(() => {
@@ -1775,6 +1802,7 @@ export default function App() {
     setInput('')
     setAttachment(null)
     setLoading(true)
+    setThinkingVisible(true)
     thinkStartRef.current = Date.now()
     lastChatActivityRef.current = Date.now()
     const history = [...base, userMsg]
@@ -1823,13 +1851,15 @@ export default function App() {
             try {
               const payload = JSON.parse(line.slice(6))
               if (payload.trace) {
+                setThinkingVisible(false)
                 aiMsg = { ...aiMsg, trace: payload.trace }
                 setMessages(prev => prev.map(m => m.id === aiMsg.id ? { ...m, trace: payload.trace } : m))
               } else if (payload.status) {
                 setPendingActions(prev => [...prev, { ...payload.status, type: 'status', statusType: payload.status.type }])
               } else if (payload.actions) {
-                setPendingActions(prev => [...prev, ...payload.actions])
+                mergePendingActions(payload.actions)
               } else if (payload.text) {
+                setThinkingVisible(false)
                 rawContent += payload.text
                 segmentContent += payload.text
                 while (MSG_SPLIT.test(segmentContent)) {
@@ -1856,13 +1886,27 @@ export default function App() {
         }
       }
       const secs = thinkStartRef.current ? Math.round((Date.now() - thinkStartRef.current) / 1000) : null
-      const finalContent = cleanDisplayedSegment(segmentContent.replace(MSG_SPLIT, '')).trim()
-      setMessages(prev => prev.map(msg => {
-        let u = msg
-        if (msg.id === activeBubbleId) u = { ...u, content: finalContent }
-        if (msg.id === aiMsg.id && secs != null) u = { ...u, thinkSecs: secs }
-        return u
-      }).filter(msg => !responseBubbleIds.has(msg.id) || msg.content?.trim() || msg.trace?.length))
+      const completeText = cleanDisplayedSegment(rawContent).trim()
+      const completeParts = completeText
+        .split(/\[MSG?\]|\[M[A-Z]*G\]/)
+        .flatMap(part => part.match(/[^。！？!?]+[。！？!?]+|[^。！？!?]+$/g) || [])
+        .map(part => part.trim())
+        .filter(Boolean)
+      const finalized = completeParts.map((content, index) => ({
+        id: aiMsg.id + index,
+        role: 'assistant',
+        content,
+        trace: index === 0 ? aiMsg.trace : undefined,
+        thinkSecs: index === 0 && secs != null ? secs : undefined,
+        ts: Date.now()
+      }))
+      setMessages(prev => {
+        const firstResponseIndex = prev.findIndex(msg => responseBubbleIds.has(msg.id))
+        const kept = prev.filter(msg => !responseBubbleIds.has(msg.id))
+        if (!finalized.length) return kept
+        const insertAt = firstResponseIndex < 0 ? kept.length : Math.min(firstResponseIndex, kept.length)
+        return [...kept.slice(0, insertAt), ...finalized, ...kept.slice(insertAt)]
+      })
     } catch (e) {
       if (e?.name === 'AbortError') {
         setMessages(prev => [...prev, { id: Date.now(), role: 'assistant', content: '等太久没反应，网络可能卡了，待会儿再试。' }])
@@ -1871,6 +1915,7 @@ export default function App() {
       }
     } finally {
       clearTimeout(abortTimer)
+      setThinkingVisible(false)
       setLoading(false)
       loadSessions()
     }
@@ -1945,6 +1990,7 @@ export default function App() {
                       <span>{m.thinkSecs != null ? `Thought for ${m.thinkSecs}s` : 'Thought process'}</span>
                     </button>
                   )}
+                  {(m.content?.trim() || m.attachment) && <>
                   <div className={`msg ${m.role}`}>
                     <div className={`bubble ${bgImage ? 'bubble-bg' : ''}`}>
                       {m.attachment?.isImage && <img className="msg-img" src={m.attachment.data} alt={m.attachment.name} />}
@@ -1983,13 +2029,17 @@ export default function App() {
                       </div>
                     </div>
                   )}
+                  </>}
                 </div>
                 ) : null
               ))}
               {pendingActions.length > 0 && (
                 <div className="action-cards">
                   {pendingActions.map((a, i) => {
-                    const dismiss = () => setPendingActions(prev => prev.filter((_, j) => j !== i))
+                    const dismiss = () => {
+                      acknowledgeAction(a.id)
+                      setPendingActions(prev => prev.filter((_, j) => j !== i))
+                    }
                     if (a.type === 'status') {
                       const icon = a.statusType === 'email_sent' ? '✉️' : a.statusType === 'notion_saved' ? '📓' : '⚠️'
                       const label = a.statusType === 'email_sent' ? `邮件已发送至 ${a.to}` : a.statusType === 'notion_saved' ? `已记录到 Notion` : a.statusType === 'email_error' ? `邮件发送失败` : `Notion 写入失败`
@@ -2006,6 +2056,8 @@ export default function App() {
                     }
                     const isCal = a.type === 'cal'
                     const openICS = () => {
+                      acknowledgeAction(a.id)
+                      setPendingActions(prev => prev.filter((_, j) => j !== i))
                       if (isCal) {
                         const params = new URLSearchParams({ title: a.title, date: a.date || '', time: a.time || '', duration: '60', notes: a.notes || '' })
                         window.location.href = `${API}/api/ios/calendar?${params}`
@@ -2030,7 +2082,7 @@ export default function App() {
                   })}
                 </div>
               )}
-              {loading && (
+              {thinkingVisible && (
                 <div className="msg-group">
                   <div className="thinking-card">
                     <span className="thinking-icon">✦</span>
