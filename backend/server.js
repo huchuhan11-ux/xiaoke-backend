@@ -3,7 +3,7 @@ const express = require('express')
 const cors = require('cors')
 const path = require('path')
 const os = require('os')
-const { spawn, execFile } = require('child_process')
+const { spawn, execFile, execFileSync } = require('child_process')
 const fs = require('fs')
 const { createClient } = require('@supabase/supabase-js')
 const nodemailer = require('nodemailer')
@@ -21,33 +21,49 @@ let memoryCache = ''
 let lastFetch = 0
 let rateLimitCache = {}
 
-const CLAUDE_CREDS = path.join(os.homedir(), '.claude', 'credentials.json')
+const CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials'
+const CLAUDE_RUNTIME_DIR = path.join(os.tmpdir(), 'xiaokehome-claude-subscription')
+const CLAUDE_RUNTIME_CREDS = path.join(CLAUDE_RUNTIME_DIR, '.credentials.json')
 let claudeUsageCache = null
 let claudeUsageCacheAt = 0
 
-function getClaudeOAuth() {
-  // Try plain credentials.json file first
+function readCredentialsFile(file) {
   try {
-    const creds = JSON.parse(fs.readFileSync(CLAUDE_CREDS, 'utf8'))
-    const oauth = creds?.claudeAiOauth || {}
-    if (oauth.accessToken) return oauth
-  } catch {}
-  // Try macOS Keychain with different service names
-  const keychainServices = ['Claude Code-credentials', 'claude-code-credentials', 'claude-ai-credentials', 'anthropic-claude']
-  for (const svc of keychainServices) {
-    try {
-      const { execSync } = require('child_process')
-      const raw = execSync(`security find-generic-password -s "${svc}" -w 2>/dev/null`, { encoding: 'utf8' }).trim()
-      if (!raw) continue
-      const creds = JSON.parse(raw)
-      const oauth = creds?.claudeAiOauth || {}
-      if (oauth.accessToken) return oauth
-    } catch {}
+    const creds = JSON.parse(fs.readFileSync(file, 'utf8'))
+    return creds?.claudeAiOauth?.accessToken ? creds : null
+  } catch { return null }
+}
+
+function readKeychainCredentials() {
+  try {
+    const raw = execFileSync('security', ['find-generic-password', '-s', CLAUDE_KEYCHAIN_SERVICE, '-w'], {
+      encoding: 'utf8', timeout: 5000
+    }).trim()
+    const creds = JSON.parse(raw)
+    return creds?.claudeAiOauth?.accessToken ? creds : null
+  } catch { return null }
+}
+
+function ensureSubscriptionConfig() {
+  fs.mkdirSync(CLAUDE_RUNTIME_DIR, { recursive: true, mode: 0o700 })
+  const runtime = readCredentialsFile(CLAUDE_RUNTIME_CREDS)
+  const keychain = readKeychainCredentials()
+  if (!runtime && !keychain) throw new Error('Claude subscription OAuth credentials are missing from Keychain')
+  const runtimeExpiry = Number(runtime?.claudeAiOauth?.expiresAt || 0)
+  const keychainExpiry = Number(keychain?.claudeAiOauth?.expiresAt || 0)
+  if (!runtime || (keychain && keychainExpiry > runtimeExpiry)) {
+    fs.writeFileSync(CLAUDE_RUNTIME_CREDS, JSON.stringify(keychain), { mode: 0o600 })
+  } else {
+    try { fs.chmodSync(CLAUDE_RUNTIME_CREDS, 0o600) } catch {}
   }
-  // Try ANTHROPIC_AUTH_TOKEN from server environment (set by some Claude setups)
-  const envToken = process.env.ANTHROPIC_AUTH_TOKEN
-  if (envToken) return { accessToken: envToken }
-  return null
+  return CLAUDE_RUNTIME_DIR
+}
+
+function getClaudeOAuth() {
+  const runtime = readCredentialsFile(CLAUDE_RUNTIME_CREDS)
+  if (runtime?.claudeAiOauth?.accessToken) return runtime.claudeAiOauth
+  const keychain = readKeychainCredentials()
+  return keychain?.claudeAiOauth || null
 }
 
 
@@ -437,27 +453,29 @@ function buildPrefsPrompt(prefs) {
   if (prefs.styleCustom && prefs.styleCustom.trim()) parts.push(prefs.styleCustom.trim())
   if (prefs.persona && prefs.persona.trim()) parts.push(`【人设补充】\n${prefs.persona.trim()}`)
   if (prefs.extra && prefs.extra.trim()) parts.push(`她补充说：${prefs.extra.trim()}`)
+  if (prefs.traceStyle && prefs.traceStyle.trim()) parts.push(`【思考链风格覆盖】写 <trace> 时，风格要求改为：${prefs.traceStyle.trim()}（覆盖默认的碎碎念3-4句要求）`)
   return parts.length ? '\n\n【偏好设置】\n' + parts.join('\n') : ''
-}
-
-function cliBuildEnv() {
-  const env = { ...process.env }
-  // Pre-set these vars so settings.json env-block can't inject DeepSeek routing (CLI skips already-set vars)
-  env.ANTHROPIC_BASE_URL = 'https://api.anthropic.com'
-  env.ANTHROPIC_AUTH_TOKEN = ''
-  env.ANTHROPIC_DEFAULT_SONNET_MODEL = ''
-  env.ANTHROPIC_DEFAULT_OPUS_MODEL = ''
-  env.ANTHROPIC_DEFAULT_HAIKU_MODEL = ''
-  env.ANTHROPIC_MODEL = ''
-  // Must delete API key so CLI uses OAuth subscription (not pay-per-use API billing)
-  delete env.ANTHROPIC_API_KEY
-  return env
 }
 
 const MODEL_MAP = {
   sonnet: 'claude-sonnet-4-6',
   opus: 'claude-opus-4-8',
   haiku: 'claude-haiku-4-5-20251001',
+}
+
+function cliBuildEnv() {
+  const configDir = ensureSubscriptionConfig()
+  return {
+    PATH: process.env.PATH,
+    HOME: process.env.HOME,
+    USER: process.env.USER,
+    SHELL: process.env.SHELL,
+    TMPDIR: process.env.TMPDIR,
+    SSH_AUTH_SOCK: process.env.SSH_AUTH_SOCK,
+    CLAUDE_CONFIG_DIR: configDir,
+    HTTPS_PROXY: process.env.HTTPS_PROXY || 'http://127.0.0.1:6952',
+    HTTP_PROXY: process.env.HTTP_PROXY || 'http://127.0.0.1:6952',
+  }
 }
 
 function cliBuildArgs(prompt, systemAppend, streaming, model) {
@@ -468,64 +486,99 @@ function cliBuildArgs(prompt, systemAppend, streaming, model) {
     '--effort', 'low',
     '--no-session-persistence',
   ]
-  if (streaming) args.push('--verbose')
+  if (streaming) args.push('--verbose', '--include-partial-messages')
   if (model && MODEL_MAP[model]) args.push('--model', MODEL_MAP[model])
-  if (streaming) args.push('--include-partial-messages')
   if (systemAppend) args.push('--append-system-prompt', systemAppend)
   return args
 }
 
+function claudeResultError(ev) {
+  if (!ev?.is_error) return null
+  const msg = ev.result || 'Claude subscription call failed'
+  if (/limit|rate|usage|用量/i.test(msg)) return new Error(`CLAUDE_SUBSCRIPTION_LIMIT: ${msg}`)
+  return new Error(msg)
+}
+
 async function streamClaude(prompt, systemAppend, onDelta, model) {
   return new Promise((resolve, reject) => {
+    let env
+    try { env = cliBuildEnv() } catch (e) { reject(e); return }
     const child = spawn('claude', cliBuildArgs(prompt, systemAppend, true, model), {
       cwd: PROJECT_ROOT,
-      env: cliBuildEnv(),
+      env,
       stdio: ['ignore', 'pipe', 'pipe']
     })
     let fullText = ''
-    child.stdout.on('data', chunk => {
-      for (const line of chunk.toString().split('\n')) {
-        if (!line.trim()) continue
-        try {
-          const ev = JSON.parse(line)
-          if (ev.type === 'stream_event') {
-            const e = ev.event
-            if (e?.type === 'content_block_delta' && e.delta?.type === 'text_delta') {
-              onDelta(e.delta.text)
-              fullText += e.delta.text
-            }
-          } else if (ev.type === 'result') {
-            fullText = ev.result || fullText
-          } else if (ev.type === 'rate_limit_event' && ev.rate_limit_info) {
-            const info = ev.rate_limit_info
-            rateLimitCache[info.rateLimitType] = { ...info, capturedAt: Date.now() }
+    let stdoutBuffer = ''
+    let stderr = ''
+    let resultError = null
+    const processLine = line => {
+      if (!line.trim()) return
+      try {
+        const ev = JSON.parse(line)
+        if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
+          onDelta(ev.delta.text)
+          fullText += ev.delta.text
+        } else if (ev.type === 'stream_event') {
+          const e = ev.event
+          if (e?.type === 'content_block_delta' && e.delta?.type === 'text_delta') {
+            onDelta(e.delta.text)
+            fullText += e.delta.text
           }
-        } catch {}
-      }
+        } else if (ev.type === 'result') {
+          resultError = claudeResultError(ev)
+          if (!fullText && !resultError && typeof ev.result === 'string') fullText = ev.result
+        } else if (ev.type === 'rate_limit_event' && ev.rate_limit_info) {
+          const info = ev.rate_limit_info
+          rateLimitCache[info.rateLimitType] = { ...info, capturedAt: Date.now() }
+        }
+      } catch {}
+    }
+    child.stdout.on('data', chunk => {
+      stdoutBuffer += chunk.toString()
+      const lines = stdoutBuffer.split('\n')
+      stdoutBuffer = lines.pop() || ''
+      for (const line of lines) processLine(line)
     })
-    child.stderr.on('data', d => console.error('claude:', d.toString().trim()))
+    child.stderr.on('data', d => { stderr += d.toString() })
     child.on('close', code => {
-      if (code !== 0 && !fullText) return reject(new Error(`claude exited ${code}`))
+      if (stdoutBuffer) processLine(stdoutBuffer)
+      if (resultError) return reject(resultError)
+      if (code !== 0 && !fullText) return reject(new Error(stderr.trim() || `Claude subscription exited ${code}`))
+      if (!fullText.trim()) return reject(new Error('Claude subscription returned an empty response'))
       resolve(fullText)
     })
+    child.on('error', reject)
   })
 }
 
-// 一次性生成：日记评论/写信/留言/记忆提炼等
-async function askClaude(prompt, systemAppend, model = 'sonnet') {
+async function askClaude(prompt, systemAppend, model = 'haiku') {
   return new Promise((resolve, reject) => {
+    let env
+    try { env = cliBuildEnv() } catch (e) { reject(e); return }
     const child = spawn('claude', cliBuildArgs(prompt, systemAppend, false, model), {
       cwd: PROJECT_ROOT,
-      env: cliBuildEnv(),
+      env,
       stdio: ['ignore', 'pipe', 'pipe']
     })
     let out = ''
+    let stderr = ''
     child.stdout.on('data', d => { out += d.toString() })
-    child.stderr.on('data', d => console.error('claude:', d.toString().trim()))
+    child.stderr.on('data', d => { stderr += d.toString() })
     child.on('close', code => {
-      try { resolve(JSON.parse(out).result || out.trim()) }
-      catch { code !== 0 && !out.trim() ? reject(new Error(`claude exited ${code}`)) : resolve(out.trim()) }
+      try {
+        const parsed = JSON.parse(out)
+        const err = claudeResultError(parsed)
+        if (err) return reject(err)
+        const text = parsed.result || ''
+        if (!text.trim()) return reject(new Error('Claude subscription returned an empty response'))
+        resolve(text)
+      } catch (e) {
+        if (e instanceof SyntaxError && code === 0 && out.trim()) return resolve(out.trim())
+        reject(e instanceof SyntaxError ? new Error(stderr.trim() || `Claude subscription exited ${code}`) : e)
+      }
     })
+    child.on('error', reject)
   })
 }
 
@@ -620,6 +673,12 @@ app.get('/api/weather', async (req, res) => {
 app.get('/api/stats/summary', async (req, res) => {
   const { count } = await supabase.from('messages').select('*', { count: 'exact', head: true })
   res.json({ count: count || 0 })
+})
+
+app.delete('/api/sessions/:session_id', async (req, res) => {
+  const { error } = await supabase.from('messages').delete().eq('session_id', req.params.session_id)
+  if (error) return res.status(500).json({ error: error.message })
+  res.json({ ok: true })
 })
 
 app.get('/api/sessions', async (req, res) => {
@@ -737,7 +796,12 @@ app.post('/api/chat', async (req, res) => {
     insertMessageSafe({ session_id, role: 'assistant', content: body, trace })
   } catch (e) {
     console.log('CLAUDE CHAT ERROR:', e.message)
-    res.write(`data: ${JSON.stringify({ text: '出错了，待会儿再试。' })}\n\n`)
+    const errMsg = /CLAUDE_SUBSCRIPTION_LIMIT|limit|rate|usage|用量/i.test(e.message || '')
+      ? 'Claude 订阅当前用量已到上限，重置后就能继续。'
+      : /credentials|OAuth|Keychain|logged in/i.test(e.message || '')
+        ? 'Claude 订阅凭证暂时读取失败。'
+        : 'Claude 订阅连接出了点问题，稍后再试。'
+    res.write(`data: ${JSON.stringify({ text: errMsg })}\n\n`)
     res.write('data: [DONE]\n\n')
     res.end()
   } finally {
@@ -929,18 +993,21 @@ async function refreshWakeupCache() {
 const GREETING_FALLBACK = '在这里。'
 let greetingCache = GREETING_FALLBACK
 let greetingRefreshing = false
+let greetingCacheAt = 0
+const GREETING_TTL = 30 * 60 * 1000 // 最多每30分钟刷一次，避免 Shortcut 频繁调用时烧额度
 async function refreshGreetingCache() {
   if (greetingRefreshing) return
   greetingRefreshing = true
   try {
     const context = buildRealContext()
     const raw = await askClaude(
-      '小好打开了主页。根据现在的时间和氛围，给她说一句话，不超过15个字，中英文都行，不要空洞问候，有你的个性。',
+      '小好打开了主页。根据现在的时间和氛围，给她说一句暧昧、有点撩的话，不超过15个字，中英文都行，有点暗示意味、让她心跳或会心一笑，带你强势的气场，不要说废话和空洞的问候。',
       memoryCache + context
     )
     const t = raw?.trim()
     if (t && !t.startsWith('API Error') && !t.startsWith('Not logged') && !t.includes('529') && !t.includes('402')) {
       greetingCache = t
+      greetingCacheAt = Date.now()
     }
   } catch (e) {
     console.log('GREETING GEN ERROR:', e.message)
@@ -952,7 +1019,7 @@ refreshGreetingCache()
 
 app.get('/api/wakeup', (req, res) => {
   res.json({ text: greetingCache })
-  refreshGreetingCache()
+  if (Date.now() - greetingCacheAt > GREETING_TTL) refreshGreetingCache()
 })
 
 app.post('/api/tts', async (req, res) => {
@@ -1388,4 +1455,7 @@ app.get('/api/proactive/check', async (req, res) => {
 })
 
 const PORT = process.env.PORT || 3001
-app.listen(PORT, () => { console.log(`后端跑起来了 port ${PORT}`) })
+app.listen(PORT, () => {
+  console.log(`后端跑起来了 port ${PORT}`)
+  console.log('AI_PROVIDER: Claude Code OAuth subscription (isolated config; DeepSeek and API key disabled)')
+})
