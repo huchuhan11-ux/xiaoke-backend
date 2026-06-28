@@ -2424,6 +2424,11 @@ button.diary-mood-btn {
   border-radius: 10px;
   cursor: pointer;
   margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+  transition: background 0.15s;
 }
 
 .session-item:active {
@@ -2432,6 +2437,31 @@ button.diary-mood-btn {
 
 .session-item.active {
   background: rgba(192,139,114,0.12);
+}
+
+.session-item.session-deleting {
+  background: rgba(180,60,60,0.08);
+}
+
+.session-item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.session-delete-btn {
+  flex-shrink: 0;
+  background: #c0392b;
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  padding: 5px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.session-delete-btn:active {
+  background: #96281b;
 }
 
 .session-date {
@@ -2491,6 +2521,7 @@ button.diary-mood-btn {
 .dark .session-date { color: #6a5a3a; }
 .dark .session-preview { color: #c8b070; }
 .dark .chat-history-btn { color: #c9a227; }
+.dark .session-item.session-deleting { background: rgba(180,60,60,0.15); }
 
 /* ── Preferences ── */
 .prefs-page {

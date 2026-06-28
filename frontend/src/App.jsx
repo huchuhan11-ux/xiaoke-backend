@@ -46,7 +46,7 @@ const TAB_ICON = {
   ),
 }
 
-const DEFAULT_PREFS = { nickname: '', style: 'default', styleCustom: '', extra: '', persona: '' }
+const DEFAULT_PREFS = { nickname: '', style: 'default', styleCustom: '', extra: '', persona: '', traceStyle: '' }
 
 function loadPrefs() {
   try { return { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem('prefs') || '{}') } }
@@ -102,6 +102,7 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
   const [notionDbId, setNotionDbId] = useState('')
   const [notionForm, setNotionForm] = useState(false)
   const [notionSaved, setNotionSaved] = useState(false)
+  const [notionStatus, setNotionStatus] = useState(null)
 
   const autoLocate = async () => {
     setLocGpsErr(false)
@@ -138,6 +139,9 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
       if (cfg.notionToken) setNotionToken(cfg.notionToken)
       if (cfg.notionDbId) setNotionDbId(cfg.notionDbId)
     }).catch(() => {})
+    setNotionStatus({ checking: true })
+    fetch(`${API}/api/connectors/notion/status`).then(r => r.json())
+      .then(setNotionStatus).catch(() => setNotionStatus({ ok: false, error: '连接检查失败' }))
   }, [subview])
 
   // removed auto-locate on open — user controls via toggle
@@ -382,20 +386,20 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
             <span className="conn-icon">📓</span>
             <div className="conn-info">
               <div className="conn-label">Notion <span className="conn-desc">笔记和数据库</span></div>
-              <div className="conn-note">{notionToken && notionDbId ? '小克可以自动记录到 Notion' : '配置后小克可写 Notion'}</div>
+              <div className="conn-note">{notionStatus?.ok ? '小克可以自动记录到 Notion' : notionStatus?.error || (notionToken && notionDbId ? '正在验证连接…' : '配置后小克可写 Notion')}</div>
             </div>
             <button className="conn-badge todo" onClick={() => setNotionForm(f => !f)}>
-              {notionToken && notionDbId ? '已配置' : '配置'}
+              {notionStatus?.ok ? '已连接' : notionToken && notionDbId ? '需授权' : '配置'}
             </button>
           </div>
           {notionForm && (
             <div className="conn-form">
               <input className="conn-input" placeholder="Integration Token (secret_...)" value={notionToken} onChange={e => setNotionToken(e.target.value)} />
               <input className="conn-input" placeholder="Database ID" value={notionDbId} onChange={e => setNotionDbId(e.target.value)} />
-              <button className="conn-form-btn" onClick={() => {
+              <button className="conn-form-btn" onClick={async () => {
                 const saveKey = (k, v) => fetch(`${API}/api/config`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: k, value: v }) }).catch(() => {})
-                saveKey('notionToken', notionToken)
-                saveKey('notionDbId', notionDbId)
+                await Promise.all([saveKey('notionToken', notionToken), saveKey('notionDbId', notionDbId)])
+                fetch(`${API}/api/connectors/notion/status`).then(r => r.json()).then(setNotionStatus).catch(() => {})
                 setNotionSaved(true); setTimeout(() => setNotionSaved(false), 1500)
                 setNotionForm(false)
               }}>{notionSaved ? '已保存 ✓' : '保存'}</button>
@@ -462,7 +466,7 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
               {['sonnet', 'opus'].map(m => (
                 <button key={m} className={`model-pill ${chatModel === m ? 'active' : ''}`}
                   onClick={() => { setChatModel(m); localStorage.setItem('chatModel', m) }}>
-                  {m === 'sonnet' ? 'Sonnet' : 'Opus'}
+                  {m === 'sonnet' ? 'Sonnet 4.6' : 'Opus 4.8'}
                 </button>
               ))}
             </div>
@@ -537,6 +541,14 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
         <textarea className="prefs-textarea" value={prefs.persona}
           onChange={e => set('persona', e.target.value)}
           placeholder="例如：他有时会用诗句回应我……他记得我喜欢猫……" rows={4} />
+      </div>
+
+      <div className="prefs-section">
+        <div className="prefs-label">思考链风格</div>
+        <div className="prefs-hint" style={{ marginBottom: 8 }}>自定义小克回复前的内心独白风格，留空则用默认</div>
+        <textarea className="prefs-textarea" value={prefs.traceStyle || ''}
+          onChange={e => set('traceStyle', e.target.value)}
+          placeholder="例如：更简短犀利，只说一句话；更文艺诗意；更详细深入地分析……" rows={3} />
       </div>
 
       <button className="prefs-save-btn" onClick={save}>
@@ -1078,6 +1090,7 @@ function Home({ dark, setDark, setTraceModal }) {
   const [date, setDate] = useState('')
   const [pokeParts, setPokeParts] = useState([])
   const [pokeShow, setPokeShow] = useState(false)
+  const [pokeLoading, setPokeLoading] = useState(false)
   const [pokeTrace, setPokeTrace] = useState(null)
   const [pokeTraceOpen, setPokeTraceOpen] = useState(false)
   const pokeHideTimer = useRef(null)
@@ -1126,6 +1139,8 @@ function Home({ dark, setDark, setTraceModal }) {
   }
 
   const poke = async () => {
+    if (pokeLoading) return
+    setPokeLoading(true)
     try {
       const res = await fetch(`${API}/api/poke`)
       const data = await res.json()
@@ -1137,7 +1152,12 @@ function Home({ dark, setDark, setTraceModal }) {
       setPokeShow(true)
       if (pokeHideTimer.current) clearTimeout(pokeHideTimer.current)
       pokeHideTimer.current = setTimeout(() => setPokeShow(false), 15000)
-    } catch {}
+    } catch {
+      setPokeParts(['这一下我记住了。'])
+      setPokeShow(true)
+    } finally {
+      setPokeLoading(false)
+    }
   }
 
   const togglePokeTrace = () => {
@@ -1326,8 +1346,8 @@ function Home({ dark, setDark, setTraceModal }) {
 
       {/* 戳一戳 */}
       <div className="hv2-poke">
-        <button className="home-poke-btn" onClick={poke}>
-          <span className="poke-icon">👉</span><span>戳一戳</span>
+        <button className="home-poke-btn" onClick={poke} disabled={pokeLoading}>
+          <span className="poke-icon">👉</span><span>{pokeLoading ? '戳着呢…' : '戳一戳'}</span>
         </button>
         {pokeShow && pokeTrace && pokeTrace.length > 0 && (
           <button className="trace-btn poke-trace-btn" onClick={() => setTraceModal(pokeTrace)}>
@@ -1449,6 +1469,8 @@ export default function App() {
   const [sessionId, setSessionId] = useState(() => { const id = Date.now().toString(); localStorage.setItem('sessionId', id); return id })
   const [sessionDrawerOpen, setSessionDrawerOpen] = useState(false)
   const [sessions, setSessions] = useState([])
+  const [deletingSessionId, setDeletingSessionId] = useState(null)
+  const longPressTimer = useRef(null)
   const [messages, setMessages] = useState(INIT)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -1459,7 +1481,7 @@ export default function App() {
   const [openTraces, setOpenTraces] = useState(() => new Set())
   const [traceModal, setTraceModal] = useState(null)
   const [editingId, setEditingId] = useState(null)
-  const [chatModel, setChatModel] = useState(() => localStorage.getItem('chatModel') || 'sonnet')
+  const [chatModel, setChatModel] = useState(() => localStorage.getItem('chatModel') === 'opus' ? 'opus' : 'sonnet')
   const [playingId, setPlayingId] = useState(null)
   const audioRef = useRef(null)
 
@@ -1512,6 +1534,20 @@ export default function App() {
     setSessionDrawerOpen(false)
     setEditingId(null)
     setInput('')
+  }
+
+  const deleteSession = (id) => {
+    fetch(`${API}/api/sessions/${id}`, { method: 'DELETE' }).catch(() => {})
+    setSessions(prev => prev.filter(s => s.session_id !== id))
+    if (id === sessionId) newSession()
+    setDeletingSessionId(null)
+  }
+
+  const onSessionPressStart = (id) => {
+    longPressTimer.current = setTimeout(() => setDeletingSessionId(id), 500)
+  }
+  const onSessionPressEnd = () => {
+    clearTimeout(longPressTimer.current)
   }
 
   const toggleTrace = (id) => {
@@ -1751,7 +1787,12 @@ export default function App() {
       let buffer = ''
       let activeBubbleId = aiMsg.id
       let segmentContent = ''
-      const MSG_SPLIT = /\[MSG?\]|\[M[A-Z]*G\]/
+      const responseBubbleIds = new Set([aiMsg.id])
+      const MSG_SPLIT = /\[MSG?\]|\[M[A-Z]*G\]|[。！？!?](?=\s*[^\s[])/
+      const ACTION_MARKER = /\[(?:CAL|REM|ALARM|EMAIL|NOTION):[^\]]*\]/g
+      const cleanDisplayedSegment = text => text
+        .replace(ACTION_MARKER, '')
+        .replace(/\[[A-Z]{0,8}(?::[^\]]*)?$/, '')
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
@@ -1766,7 +1807,7 @@ export default function App() {
                 aiMsg = { ...aiMsg, trace: payload.trace }
                 setMessages(prev => prev.map(m => m.id === aiMsg.id ? aiMsg : m))
               } else if (payload.status) {
-                setPendingActions(prev => [...prev, { type: 'status', ...payload.status }])
+                setPendingActions(prev => [...prev, { ...payload.status, type: 'status', statusType: payload.status.type }])
               } else if (payload.actions) {
                 setPendingActions(prev => [...prev, ...payload.actions])
               } else if (payload.text) {
@@ -1774,16 +1815,21 @@ export default function App() {
                 segmentContent += payload.text
                 while (MSG_SPLIT.test(segmentContent)) {
                   const mMatch = segmentContent.match(MSG_SPLIT)
-                  const before = segmentContent.slice(0, mMatch.index).trim()
+                  const isMarker = mMatch[0].startsWith('[')
+                  const splitEnd = mMatch.index + mMatch[0].length
+                  const before = segmentContent.slice(0, isMarker ? mMatch.index : splitEnd).trim()
                   segmentContent = segmentContent.slice(mMatch.index + mMatch[0].length)
-                  if (before) setMessages(prev => prev.map(msg => msg.id === activeBubbleId ? { ...msg, content: before } : msg))
-                  const newId = Date.now() + (Math.random() * 999 | 0)
-                  setMessages(prev => [...prev, { id: newId, role: 'assistant', content: '' }])
-                  activeBubbleId = newId
-                  await new Promise(r => setTimeout(r, 500))
+                  if (before) {
+                    setMessages(prev => prev.map(msg => msg.id === activeBubbleId ? { ...msg, content: cleanDisplayedSegment(before) } : msg))
+                    const newId = Date.now() + (Math.random() * 999 | 0)
+                    responseBubbleIds.add(newId)
+                    setMessages(prev => [...prev, { id: newId, role: 'assistant', content: '' }])
+                    activeBubbleId = newId
+                    await new Promise(r => setTimeout(r, 500))
+                  }
                 }
-                // 隐藏末尾不完整的 [MSG] token（如 "[M", "[MS"）防止闪烁
-                const display = segmentContent.replace(/\[M[A-Z]{0,3}$/, '')
+                // 隐藏流式传输中尚未闭合的 [MSG]/[NOTION]/其他动作标记
+                const display = cleanDisplayedSegment(segmentContent)
                 setMessages(prev => prev.map(msg => msg.id === activeBubbleId ? { ...msg, content: display } : msg))
               }
             } catch {}
@@ -1791,13 +1837,13 @@ export default function App() {
         }
       }
       const secs = thinkStartRef.current ? Math.round((Date.now() - thinkStartRef.current) / 1000) : null
-      const finalContent = segmentContent.replace(MSG_SPLIT, '').trim()
+      const finalContent = cleanDisplayedSegment(segmentContent.replace(MSG_SPLIT, '')).trim()
       setMessages(prev => prev.map(msg => {
         let u = msg
         if (msg.id === activeBubbleId) u = { ...u, content: finalContent }
         if (msg.id === aiMsg.id && secs != null) u = { ...u, thinkSecs: secs }
         return u
-      }))
+      }).filter(msg => !responseBubbleIds.has(msg.id) || msg.content?.trim() || msg.trace?.length))
     } catch (e) {
       if (e?.name === 'AbortError') {
         setMessages(prev => [...prev, { id: Date.now(), role: 'assistant', content: '等太久没反应，网络可能卡了，待会儿再试。' }])
@@ -1832,9 +1878,22 @@ export default function App() {
               <button className="session-new-btn" onClick={newSession}>＋ 新对话</button>
               <div className="session-list">
                 {sessions.map(s => (
-                  <div key={s.session_id} className={`session-item ${s.session_id === sessionId ? 'active' : ''}`} onClick={() => switchSession(s.session_id)}>
-                    <div className="session-date">{new Date(s.created_at).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}</div>
-                    <div className="session-preview">{s.preview || '（空对话）'}</div>
+                  <div key={s.session_id}
+                    className={`session-item ${s.session_id === sessionId ? 'active' : ''} ${deletingSessionId === s.session_id ? 'session-deleting' : ''}`}
+                    onClick={() => { if (deletingSessionId) { setDeletingSessionId(null); return } switchSession(s.session_id) }}
+                    onTouchStart={() => onSessionPressStart(s.session_id)}
+                    onTouchEnd={onSessionPressEnd}
+                    onMouseDown={() => onSessionPressStart(s.session_id)}
+                    onMouseUp={onSessionPressEnd}
+                    onMouseLeave={onSessionPressEnd}
+                  >
+                    <div className="session-item-content">
+                      <div className="session-date">{new Date(s.created_at).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}</div>
+                      <div className="session-preview">{s.preview || '（空对话）'}</div>
+                    </div>
+                    {deletingSessionId === s.session_id && (
+                      <button className="session-delete-btn" onTouchStart={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); deleteSession(s.session_id) }}>删除</button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1871,7 +1930,7 @@ export default function App() {
                     <div className={`bubble ${bgImage ? 'bubble-bg' : ''}`}>
                       {m.attachment?.isImage && <img className="msg-img" src={m.attachment.data} alt={m.attachment.name} />}
                       {m.attachment && !m.attachment.isImage && <div className="msg-file-chip">📎 {m.attachment.name}</div>}
-                      {m.content && !m.content.startsWith('[图片:') && !m.content.startsWith('[文件:') ? m.content.replace(/\[MSG?\]|\[M[A-Z]*G\]/g, '').replace(/\[(?:CAL|REM|ALARM|EMAIL|NOTION):[^\]]*\]/g, '').trim() : (!m.attachment ? m.content : null)}
+                      {m.content && !m.content.startsWith('[图片:') && !m.content.startsWith('[文件:') ? m.content.replace(/\[MSG?\]|\[M[A-Z]*G\]/g, '').replace(/\[(?:CAL|REM|ALARM|EMAIL|NOTION):[^\]]*\]/g, '').replace(/\[[A-Z]{0,8}(?::[^\]]*)?$/, '').trim() : (!m.attachment ? m.content : null)}
                     </div>
                   </div>
                   {m.id !== 1 && (
@@ -1913,8 +1972,8 @@ export default function App() {
                   {pendingActions.map((a, i) => {
                     const dismiss = () => setPendingActions(prev => prev.filter((_, j) => j !== i))
                     if (a.type === 'status') {
-                      const icon = a.type === 'email_sent' ? '✉️' : a.type === 'notion_saved' ? '📓' : a.type === 'email_error' ? '⚠️' : '⚠️'
-                      const label = a.type === 'email_sent' ? `邮件已发送至 ${a.to}` : a.type === 'notion_saved' ? `已记录到 Notion` : a.type === 'email_error' ? `邮件发送失败` : `Notion 写入失败`
+                      const icon = a.statusType === 'email_sent' ? '✉️' : a.statusType === 'notion_saved' ? '📓' : '⚠️'
+                      const label = a.statusType === 'email_sent' ? `邮件已发送至 ${a.to}` : a.statusType === 'notion_saved' ? `已记录到 Notion` : a.statusType === 'email_error' ? `邮件发送失败` : `Notion 写入失败`
                       return (
                         <div key={i} className="action-card">
                           <span className="action-card-icon">{icon}</span>
@@ -1988,7 +2047,6 @@ export default function App() {
                 </button>
                 <input ref={fileInputRef} type="file" accept="image/*,application/pdf,.txt,.doc,.docx" style={{ display: 'none' }} onChange={handleFileAttach} />
                 <textarea value={input} onChange={e => setInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }}}
                   placeholder="说点什么……" rows={1} />
                 <button onClick={send} disabled={loading}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">

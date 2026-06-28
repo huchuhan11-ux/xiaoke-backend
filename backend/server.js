@@ -266,7 +266,7 @@ const TRACE_INSTRUCTION = `
 
 【发邮件】需要帮小好发邮件时，输出 [EMAIL:收件人邮箱|邮件主题|邮件正文]。系统会自动发送，不要另外描述邮件内容。发完邮件后必须继续正常说话，不要空着，不要说"邮件已发"这种废话，就像正常聊天一样回应。
 
-【Notion记录】需要记录到 Notion 时，输出 [NOTION:页面标题|正文内容]。系统会自动创建页面。
+【Notion记录】需要记录到 Notion 时，输出 [NOTION:页面标题|正文内容]。小克之家后端已经接好了 Notion Integration，不要让小好再去 Claude.ai、MCP 或新会话授权，也不要声称没有权限；只需输出标记，系统会自动创建页面。输出标记后还要正常回应，但不要重复正文。
 
 【禁止输出XML】绝对不能在回复正文中输出任何 XML 标签、DSML、function_calls、tool_calls 或 invoke 格式。如需说明功能是否可用，用自然语言描述即可，不要用任何尖括号标签。
 
@@ -338,12 +338,46 @@ async function createNotionPage(title, content) {
   const dbId = await getConfig('notionDbId')
   if (!token || !dbId) throw new Error('Notion 未配置')
   const notion = new NotionClient({ auth: token })
+  let dataSource
+  try {
+    const database = await notion.databases.retrieve({ database_id: dbId })
+    const dataSourceId = database?.data_sources?.[0]?.id
+    if (!dataSourceId) throw new Error('Notion 数据库没有可写的数据源')
+    dataSource = await notion.dataSources.retrieve({ data_source_id: dataSourceId })
+  } catch {
+    try {
+      dataSource = await notion.dataSources.retrieve({ data_source_id: dbId })
+    } catch {
+      throw new Error('Notion 数据库未分享给 Integration「克」')
+    }
+  }
+  const titleProperty = Object.entries(dataSource.properties || {}).find(([, prop]) => prop.type === 'title')
+  if (!titleProperty) throw new Error('Notion 数据库缺少标题字段')
+  const [titlePropertyName] = titleProperty
   await notion.pages.create({
-    parent: { database_id: dbId },
-    properties: { title: { title: [{ text: { content: title || '无标题' } }] } },
+    parent: { data_source_id: dataSource.id },
+    properties: { [titlePropertyName]: { title: [{ text: { content: title || '无标题' } }] } },
     children: content ? [{ object: 'block', type: 'paragraph', paragraph: { rich_text: [{ type: 'text', text: { content } }] } }] : []
   })
 }
+
+app.get('/api/connectors/notion/status', async (req, res) => {
+  const token = await getConfig('notionToken')
+  const dbId = await getConfig('notionDbId')
+  if (!token || !dbId) return res.json({ ok: false, configured: false, error: 'Notion 未配置' })
+  const notion = new NotionClient({ auth: token })
+  try {
+    const database = await notion.databases.retrieve({ database_id: dbId })
+    const dataSourceId = database?.data_sources?.[0]?.id
+    if (!dataSourceId) throw new Error('数据库没有可写的数据源')
+    const dataSource = await notion.dataSources.retrieve({ data_source_id: dataSourceId })
+    const titleProperty = Object.values(dataSource.properties || {}).find(prop => prop.type === 'title')
+    if (!titleProperty) throw new Error('数据库缺少标题字段')
+    res.json({ ok: true, configured: true, title_property: titleProperty.name })
+  } catch {
+    res.json({ ok: false, configured: true, error: '请在 Notion 中把该数据库分享给 Integration「克」' })
+  }
+})
 
 // 过滤掉模型可能在回复文本中输出的 DSML/function_calls XML 块（工具调用内容不应显示给用户）
 function makeDsmlFilter(onText) {
@@ -552,11 +586,11 @@ async function streamClaude(prompt, systemAppend, onDelta, model) {
   })
 }
 
-async function askClaude(prompt, systemAppend, model = 'haiku') {
+async function askClaude(prompt, systemAppend) {
   return new Promise((resolve, reject) => {
     let env
     try { env = cliBuildEnv() } catch (e) { reject(e); return }
-    const child = spawn('claude', cliBuildArgs(prompt, systemAppend, false, model), {
+    const child = spawn('claude', cliBuildArgs(prompt, systemAppend, false, 'haiku'), {
       cwd: PROJECT_ROOT,
       env,
       stdio: ['ignore', 'pipe', 'pipe']
@@ -731,6 +765,7 @@ app.post('/api/chat', async (req, res) => {
     extractFromRecentChat(since).catch(e => console.log('聊天记忆提炼失败', e.message))
   }
   const { messages, session_id = 'default', preferences, model, attachment } = req.body
+  const chatModel = model === 'opus' ? 'opus' : 'sonnet'
   const lastMsg = messages[messages.length - 1]
   // fire-and-forget: 不阻塞聊天响应
   ;(async () => {
@@ -740,6 +775,8 @@ app.post('/api/chat', async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
+  res.setHeader('X-AI-Provider', 'Claude-Code-OAuth-Subscription')
+  res.setHeader('X-Claude-Model', MODEL_MAP[chatModel])
   let tmpFilePath = null
   try {
     // write attachment to temp file so Claude CLI can read it
@@ -759,7 +796,7 @@ app.post('/api/chat', async (req, res) => {
       trace => res.write(`data: ${JSON.stringify({ trace })}\n\n`)
     )
     const prefsPrompt = buildPrefsPrompt(preferences)
-    const fullContent = await streamClaude(transcript, memoryCache + TRACE_INSTRUCTION + context + prefsPrompt, splitter, model)
+    const fullContent = await streamClaude(transcript, memoryCache + TRACE_INSTRUCTION + context + prefsPrompt, splitter, chatModel)
     splitter.flush()
     dsmlFilter.flush()
     const { trace, body: rawBody } = extractTrace(fullContent)
@@ -926,7 +963,7 @@ app.get('/api/poke', async (req, res) => {
     const context = buildRealContext()
     const raw = await askClaude(
       '小好戳了你一下，像撒娇一样的小动作，不是有事找你。给一句简短俏皮/宠溺的回应，不超过20字。',
-      memoryCache + TRACE_INSTRUCTION + context
+      memoryCache + context + '\n\n先用 <trace></trace> 写1-2句很短的内心反应，再写正式回应。不要输出其他格式。'
     )
     const { trace, body } = extractTrace(raw)
     if (!body) throw new Error('empty poke result')
@@ -992,34 +1029,36 @@ async function refreshWakeupCache() {
 // ── 主页问候语：时间感知，与晨间唤醒音频分离 ──
 const GREETING_FALLBACK = '在这里。'
 let greetingCache = GREETING_FALLBACK
-let greetingRefreshing = false
+let greetingRefreshPromise = null
 let greetingCacheAt = 0
-const GREETING_TTL = 30 * 60 * 1000 // 最多每30分钟刷一次，避免 Shortcut 频繁调用时烧额度
 async function refreshGreetingCache() {
-  if (greetingRefreshing) return
-  greetingRefreshing = true
-  try {
-    const context = buildRealContext()
-    const raw = await askClaude(
-      '小好打开了主页。根据现在的时间和氛围，给她说一句暧昧、有点撩的话，不超过15个字，中英文都行，有点暗示意味、让她心跳或会心一笑，带你强势的气场，不要说废话和空洞的问候。',
-      memoryCache + context
-    )
-    const t = raw?.trim()
-    if (t && !t.startsWith('API Error') && !t.startsWith('Not logged') && !t.includes('529') && !t.includes('402')) {
-      greetingCache = t
-      greetingCacheAt = Date.now()
+  if (greetingRefreshPromise) return greetingRefreshPromise
+  greetingRefreshPromise = (async () => {
+    try {
+      const context = buildRealContext()
+      const raw = await askClaude(
+        '小好刚刚点进主页。根据现在的时间和氛围，重新给她说一句暧昧、有点撩的话，不超过15个字，中英文都行，带你强势的气场，不要空洞问候，也不要复用上一句。',
+        memoryCache + context
+      )
+      const t = raw?.trim()
+      if (t && !t.startsWith('API Error') && !t.startsWith('Not logged') && !t.includes('529') && !t.includes('402')) {
+        greetingCache = t
+        greetingCacheAt = Date.now()
+      }
+    } catch (e) {
+      console.log('GREETING GEN ERROR:', e.message)
+    } finally {
+      greetingRefreshPromise = null
     }
-  } catch (e) {
-    console.log('GREETING GEN ERROR:', e.message)
-  } finally {
-    greetingRefreshing = false
-  }
+    return greetingCache
+  })()
+  return greetingRefreshPromise
 }
 refreshGreetingCache()
 
-app.get('/api/wakeup', (req, res) => {
-  res.json({ text: greetingCache })
-  if (Date.now() - greetingCacheAt > GREETING_TTL) refreshGreetingCache()
+app.get('/api/wakeup', async (req, res) => {
+  await refreshGreetingCache()
+  res.json({ text: greetingCache, generated_at: greetingCacheAt })
 })
 
 app.post('/api/tts', async (req, res) => {
