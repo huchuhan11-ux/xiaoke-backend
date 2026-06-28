@@ -4449,3 +4449,112 @@ button.diary-mood-btn {
 .dark .hv2-bc-wxsub,
 .dark .hv2-wc-sub,
 .dark .wish-del { color: #806d70; }
+
+/* Voice messages + speech input */
+.voice-bubble {
+  min-width: 210px;
+  max-width: min(78vw, 330px);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 6px 20px 20px 20px;
+  background: linear-gradient(145deg, #ead8ce, #e2c8bd);
+  color: #6f493d;
+  box-shadow: 0 7px 20px rgba(120,78,60,0.12);
+}
+.voice-play-btn {
+  width: 34px; height: 34px; border-radius: 50%; border: none;
+  display: flex; align-items: center; justify-content: center;
+  background: #b97869; color: #fff; font-size: 12px; cursor: pointer;
+  flex-shrink: 0; padding-left: 2px;
+}
+.voice-play-btn.playing { padding-left: 0; background: #9d6258; }
+.voice-wave { flex: 1; display: flex; align-items: center; gap: 2px; height: 22px; }
+.voice-wave span { width: 2px; border-radius: 2px; background: currentColor; opacity: 0.58; }
+.voice-lang { font-size: 9px; letter-spacing: 0.08em; opacity: 0.55; }
+.voice-translate-btn {
+  border: none; background: rgba(111,73,61,0.1); color: inherit;
+  width: 26px; height: 26px; border-radius: 50%; cursor: pointer; font-family: inherit;
+}
+.voice-translation,
+.inline-translation {
+  margin-top: 7px; padding: 8px 11px; border-radius: 12px;
+  background: rgba(192,139,114,0.08); color: #876859;
+  font-size: 12px; line-height: 1.65; max-width: min(78vw, 360px);
+}
+.inline-translation { border-top: 1px solid rgba(192,139,114,0.12); border-radius: 0; padding: 7px 0 0; }
+.msg-translate { font-size: 11px; font-family: inherit; }
+.voice-record-btn {
+  width: 30px !important; height: 30px !important; flex-shrink: 0;
+  background: transparent !important; color: #a8765f !important;
+  box-shadow: none !important; border: none !important;
+}
+.voice-record-btn.recording { background: rgba(187,86,91,0.13) !important; color: #b8565d !important; animation: recordPulse 1.2s ease-in-out infinite; }
+.voice-record-btn:disabled { opacity: 0.45; }
+.voice-status { font-size: 11px; color: #a8765f; padding: 0 8px 7px; }
+.voice-status.recording { color: #b8565d; }
+@keyframes recordPulse { 50% { transform: scale(0.9); opacity: 0.7; } }
+
+.dark .voice-bubble {
+  background: linear-gradient(145deg, #493039, #38252e);
+  color: #efc9d2;
+  border: 1px solid rgba(230,169,185,0.11);
+  box-shadow: 0 9px 24px rgba(4,2,4,0.24);
+}
+.dark .voice-play-btn { background: linear-gradient(145deg, #dc9a8b, #bd786f); color: #28191d; }
+.dark .voice-play-btn.playing { background: #e2ad9f; }
+.dark .voice-translate-btn { background: rgba(239,201,210,0.09); }
+.dark .voice-translation,
+.dark .inline-translation { background: rgba(217,157,138,0.065); color: #cbb7ae; border-color: rgba(217,157,138,0.12); }
+.dark .voice-record-btn { color: #b89992 !important; }
+.dark .voice-record-btn.recording { color: #f1a6aa !important; background: rgba(201,90,99,0.12) !important; }
+.dark .voice-status { color: #b89992; }
+
+/* Finish the night palette for history and the four Records panels */
+.dark .session-drawer {
+  background: linear-gradient(180deg, #20191f, #181317) !important;
+  border-left: 1px solid var(--border);
+  box-shadow: -16px 0 44px rgba(4,2,4,0.42);
+}
+.dark .session-drawer-header {
+  color: var(--text) !important;
+  border-bottom-color: var(--border) !important;
+}
+.dark .session-drawer-header button { color: var(--accent) !important; }
+.dark .session-new-btn {
+  background: rgba(217,157,138,0.08) !important;
+  border-color: var(--border-strong) !important;
+  color: var(--accent-soft) !important;
+}
+.dark .session-item { border: 1px solid transparent; }
+.dark .session-item:hover { background: rgba(217,157,138,0.045); }
+.dark .session-item.active {
+  background: linear-gradient(135deg, rgba(112,63,78,0.3), rgba(217,157,138,0.07)) !important;
+  border-color: rgba(217,157,138,0.12);
+}
+.dark .session-date { color: #806d70 !important; }
+.dark .session-preview { color: var(--text-soft) !important; }
+
+.dark .records-home-wrap { background: var(--bg); }
+.dark .records-home-card {
+  background: linear-gradient(145deg, #292027, #20191f) !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: 0 12px 30px rgba(4,2,4,0.2) !important;
+  position: relative;
+  overflow: hidden;
+}
+.dark .records-home-card::after {
+  content: '';
+  position: absolute; inset: 0 auto 0 0; width: 3px;
+  background: linear-gradient(180deg, var(--accent), rgba(148,80,101,0.45));
+}
+.dark .records-home-card:active { background: #30242c !important; }
+.dark .records-home-icon {
+  width: 44px; height: 44px; border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(217,157,138,0.08);
+  filter: saturate(0.72);
+}
+.dark .records-home-name { color: var(--text) !important; }
+.dark .records-home-sub { color: var(--muted) !important; }

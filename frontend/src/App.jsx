@@ -47,6 +47,17 @@ const TAB_ICON = {
 }
 
 const DEFAULT_PREFS = { nickname: '', style: 'default', styleCustom: '', extra: '', persona: '', traceStyle: '' }
+function extractVoiceMarkers(content = '') {
+  const voiceMarker = /\[VOICE:([^\]]+)\]/gi
+  const voices = [...content.matchAll(voiceMarker)]
+    .map(match => match[1].trim())
+    .filter(text => text && !/[\u3400-\u9fff]/.test(text))
+  return { voices, clean: content.replace(/\[VOICE:([^\]]+)\]/gi, '').trim() }
+}
+
+function isEnglishContent(text = '') {
+  return /[A-Za-z]/.test(text) && !/[\u3400-\u9fff]/.test(text)
+}
 
 function loadPrefs() {
   try { return { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem('prefs') || '{}') } }
@@ -1502,6 +1513,13 @@ export default function App() {
   const [chatModel, setChatModel] = useState(() => localStorage.getItem('chatModel') === 'opus' ? 'opus' : 'sonnet')
   const [playingId, setPlayingId] = useState(null)
   const audioRef = useRef(null)
+  const [recording, setRecording] = useState(false)
+  const [transcribing, setTranscribing] = useState(false)
+  const [voiceStatus, setVoiceStatus] = useState('')
+  const mediaRecorderRef = useRef(null)
+  const recognitionRef = useRef(null)
+  const mediaStreamRef = useRef(null)
+  const audioChunksRef = useRef([])
 
   const mergePendingActions = incoming => {
     if (!Array.isArray(incoming) || incoming.length === 0) return
@@ -1515,7 +1533,7 @@ export default function App() {
     if (id) fetch(`${API}/api/pending-actions/${encodeURIComponent(id)}`, { method: 'DELETE', keepalive: true }).catch(() => {})
   }
 
-  const playTTS = async (msgId, content) => {
+  const playTTS = async (msgId, content, englishOnly = false) => {
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null }
     if (playingId === msgId) { setPlayingId(null); return }
     setPlayingId(msgId)
@@ -1523,7 +1541,7 @@ export default function App() {
       const res = await fetch(`${API}/api/tts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: content })
+        body: JSON.stringify({ text: content, language_code: englishOnly ? 'en' : undefined })
       })
       if (!res.ok) throw new Error()
       const blob = await res.blob()
@@ -1533,6 +1551,117 @@ export default function App() {
       audio.play()
       audio.onended = () => { setPlayingId(null); URL.revokeObjectURL(url); audioRef.current = null }
     } catch { setPlayingId(null) }
+  }
+
+  const translateMessage = async (msgId, text) => {
+    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, translation: '翻译中…' } : m))
+    try {
+      const response = await fetch(`${API}/api/translate`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text })
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error()
+      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, translation: data.translation || '暂无译文' } : m))
+    } catch {
+      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, translation: '翻译失败，稍后再试' } : m))
+    }
+  }
+
+  const stopRecording = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop()
+      return
+    }
+    if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop()
+  }
+
+  const toggleRecording = async () => {
+    if (recording) { stopRecording(); return }
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition()
+      recognitionRef.current = recognition
+      recognition.lang = 'zh-CN'
+      recognition.interimResults = true
+      recognition.continuous = false
+      let finalText = ''
+      recognition.onresult = event => {
+        let interim = ''
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const text = event.results[i][0]?.transcript || ''
+          if (event.results[i].isFinal) finalText += text
+          else interim += text
+        }
+        setVoiceStatus(interim || '正在听…')
+      }
+      recognition.onend = () => {
+        recognitionRef.current = null
+        setRecording(false)
+        if (finalText.trim()) {
+          setInput(prev => `${prev}${prev && !prev.endsWith('\n') ? ' ' : ''}${finalText.trim()}`)
+          setVoiceStatus('已转成文字')
+        } else setVoiceStatus('没有听清')
+        setTimeout(() => setVoiceStatus(''), 1800)
+      }
+      recognition.onerror = () => {
+        recognitionRef.current = null
+        setRecording(false)
+        setVoiceStatus('语音识别失败，请检查麦克风权限')
+      }
+      try {
+        recognition.start()
+        setRecording(true)
+        setVoiceStatus('正在听，点一下停止')
+        return
+      } catch {}
+    }
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setVoiceStatus('当前浏览器不支持录音')
+      return
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      mediaStreamRef.current = stream
+      const candidates = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm']
+      const mimeType = candidates.find(type => MediaRecorder.isTypeSupported?.(type)) || ''
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+      mediaRecorderRef.current = recorder
+      audioChunksRef.current = []
+      recorder.ondataavailable = event => { if (event.data?.size) audioChunksRef.current.push(event.data) }
+      recorder.onstop = async () => {
+        setRecording(false)
+        setTranscribing(true)
+        setVoiceStatus('正在转成文字…')
+        stream.getTracks().forEach(track => track.stop())
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' })
+        try {
+          const dataUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = () => resolve(reader.result)
+            reader.onerror = reject
+            reader.readAsDataURL(blob)
+          })
+          const response = await fetch(`${API}/api/stt`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ audio: dataUrl, mime: blob.type })
+          })
+          const data = await response.json()
+          if (!response.ok) throw new Error(data.error || 'transcription failed')
+          if (data.text) setInput(prev => `${prev}${prev && !prev.endsWith('\n') ? ' ' : ''}${data.text}`)
+          setVoiceStatus(data.text ? '已转成文字' : '没有听清')
+        } catch (e) {
+          setVoiceStatus(e?.message || '语音转文字失败')
+        } finally {
+          setTranscribing(false)
+          setTimeout(() => setVoiceStatus(''), 1800)
+        }
+      }
+      recorder.start()
+      setRecording(true)
+      setVoiceStatus('正在录音，点一下停止')
+    } catch {
+      setVoiceStatus('需要允许麦克风权限')
+    }
   }
   const bottomRef = useRef(null)
   const messagesRef = useRef(null)
@@ -1689,12 +1818,21 @@ export default function App() {
         if (data && data.length > 0) {
           const LOAD_MSG_RE = /\[MSG?\]|\[M[A-Z]*G\]/
           const loaded = data.flatMap(m => {
-            const parts = (m.content || '').split(LOAD_MSG_RE).map(p => p.trim()).filter(Boolean)
-            if (parts.length > 1) {
-              const base = Number(m.id)
-              return parts.map((p, i) => ({ id: base + i, role: m.role, content: p, trace: i === 0 ? (m.trace || null) : undefined, ts: m.created_at ? new Date(m.created_at).getTime() : null }))
-            }
-            return [{ id: m.id, role: m.role, content: parts[0] ?? m.content, trace: m.trace || null, ts: m.created_at ? new Date(m.created_at).getTime() : null }]
+            const { clean, voices } = extractVoiceMarkers(m.content || '')
+            const parts = clean.split(LOAD_MSG_RE).map(p => p.trim()).filter(Boolean)
+            const base = Number(m.id)
+            const ts = m.created_at ? new Date(m.created_at).getTime() : null
+            const textMessages = parts.map((p, i) => ({ id: base + i, role: m.role, content: p, trace: i === 0 ? (m.trace || null) : undefined, ts }))
+            const voiceMessages = voices.map((voiceText, i) => ({
+              id: `${m.id}-voice-${i}`,
+              role: m.role,
+              content: '',
+              voiceText,
+              trace: parts.length === 0 && i === 0 ? (m.trace || null) : undefined,
+              ts
+            }))
+            if (textMessages.length || voiceMessages.length) return [...textMessages, ...voiceMessages]
+            return [{ id: m.id, role: m.role, content: clean || m.content, trace: m.trace || null, ts }]
           })
           // compute thinkSecs from timestamp gap between user msg and assistant reply
           const withSecs = loaded.map((msg, idx) => {
@@ -1834,7 +1972,7 @@ export default function App() {
       let segmentContent = ''
       const responseBubbleIds = new Set([aiMsg.id])
       const MSG_SPLIT = /\[MSG?\]|\[M[A-Z]*G\]|[。！？!?](?=\s*[^\s[])/
-      const ACTION_MARKER = /\[(?:CAL|REM|ALARM|EMAIL|NOTION):[^\]]*\]/g
+      const ACTION_MARKER = /\[(?:CAL|REM|ALARM|EMAIL|NOTION|VOICE):[^\]]*\]/g
       const cleanDisplayedSegment = text => text
         .replace(/<trace\b[^>]*>[\s\S]*?<\/trace>/gi, '')
         .replace(/<\/?trace\b[^>]*>/gi, '')
@@ -1886,13 +2024,14 @@ export default function App() {
         }
       }
       const secs = thinkStartRef.current ? Math.round((Date.now() - thinkStartRef.current) / 1000) : null
+      const { voices: voiceTexts } = extractVoiceMarkers(rawContent)
       const completeText = cleanDisplayedSegment(rawContent).trim()
       const completeParts = completeText
         .split(/\[MSG?\]|\[M[A-Z]*G\]/)
         .flatMap(part => part.match(/[^。！？!?]+[。！？!?]+|[^。！？!?]+$/g) || [])
         .map(part => part.trim())
         .filter(Boolean)
-      const finalized = completeParts.map((content, index) => ({
+      const finalizedText = completeParts.map((content, index) => ({
         id: aiMsg.id + index,
         role: 'assistant',
         content,
@@ -1900,6 +2039,16 @@ export default function App() {
         thinkSecs: index === 0 && secs != null ? secs : undefined,
         ts: Date.now()
       }))
+      const finalizedVoices = voiceTexts.map((voiceText, index) => ({
+        id: `${aiMsg.id}-voice-${index}`,
+        role: 'assistant',
+        content: '',
+        voiceText,
+        trace: finalizedText.length === 0 && index === 0 ? aiMsg.trace : undefined,
+        thinkSecs: finalizedText.length === 0 && index === 0 && secs != null ? secs : undefined,
+        ts: Date.now()
+      }))
+      const finalized = [...finalizedText, ...finalizedVoices]
       setMessages(prev => {
         const firstResponseIndex = prev.findIndex(msg => responseBubbleIds.has(msg.id))
         const kept = prev.filter(msg => !responseBubbleIds.has(msg.id))
@@ -1982,7 +2131,7 @@ export default function App() {
             </div>
             <div className="messages" ref={messagesRef} style={bgImage ? { background: 'transparent' } : {}}>
               {messages.map(m => (
-                (m.content?.trim() || m.trace?.length || m.role === 'user') ? (
+                (m.content?.trim() || m.voiceText || m.trace?.length || m.role === 'user') ? (
                 <div key={m.id} className="msg-group">
                   {m.role === 'assistant' && m.trace && m.trace.length > 0 && (
                     <button className="trace-btn" onClick={() => setTraceModal(m.trace)}>
@@ -1990,12 +2139,28 @@ export default function App() {
                       <span>{m.thinkSecs != null ? `Thought for ${m.thinkSecs}s` : 'Thought process'}</span>
                     </button>
                   )}
+                  {m.voiceText && (
+                    <div className="msg assistant">
+                      <div className="voice-bubble">
+                        <button className={`voice-play-btn${playingId === m.id ? ' playing' : ''}`} onClick={() => playTTS(m.id, m.voiceText, true)} title="播放英文语音">
+                          {playingId === m.id ? 'Ⅱ' : '▶'}
+                        </button>
+                        <div className="voice-wave" aria-hidden="true">
+                          {[5,9,14,8,17,12,7,15,19,10,6,13,18,11,7,15,9,5].map((height, i) => <span key={i} style={{ height }} />)}
+                        </div>
+                        <span className="voice-lang">EN</span>
+                        <button className="voice-translate-btn" onClick={() => translateMessage(m.id, m.voiceText)}>译</button>
+                      </div>
+                      {m.translation && <div className="voice-translation">{m.translation}</div>}
+                    </div>
+                  )}
                   {(m.content?.trim() || m.attachment) && <>
                   <div className={`msg ${m.role}`}>
                     <div className={`bubble ${bgImage ? 'bubble-bg' : ''}`}>
                       {m.attachment?.isImage && <img className="msg-img" src={m.attachment.data} alt={m.attachment.name} />}
                       {m.attachment && !m.attachment.isImage && <div className="msg-file-chip">📎 {m.attachment.name}</div>}
-                      {m.content && !m.content.startsWith('[图片:') && !m.content.startsWith('[文件:') ? m.content.replace(/<trace\b[^>]*>[\s\S]*?<\/trace>/gi, '').replace(/<\/?trace\b[^>]*>/gi, '').replace(/\[MSG?\]|\[M[A-Z]*G\]/g, '').replace(/\[(?:CAL|REM|ALARM|EMAIL|NOTION):[^\]]*\]/g, '').replace(/\[[A-Z]{0,8}(?::[^\]]*)?$/, '').trim() : (!m.attachment ? m.content : null)}
+                      {m.content && !m.content.startsWith('[图片:') && !m.content.startsWith('[文件:') ? m.content.replace(/<trace\b[^>]*>[\s\S]*?<\/trace>/gi, '').replace(/<\/?trace\b[^>]*>/gi, '').replace(/\[MSG?\]|\[M[A-Z]*G\]/g, '').replace(/\[(?:CAL|REM|ALARM|EMAIL|NOTION|VOICE):[^\]]*\]/g, '').replace(/\[[A-Z]{0,8}(?::[^\]]*)?$/, '').trim() : (!m.attachment ? m.content : null)}
+                      {m.translation && <div className="inline-translation">{m.translation}</div>}
                     </div>
                   </div>
                   {m.id !== 1 && (
@@ -2013,6 +2178,9 @@ export default function App() {
                               <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
                             </svg>
                           </button>
+                        )}
+                        {m.role === 'assistant' && isEnglishContent(m.content) && (
+                          <button className="msg-act msg-translate" title="翻译" onClick={() => translateMessage(m.id, m.content)}>译</button>
                         )}
                         {m.role === 'user' && <>
                           <button className="msg-act" title="编辑" onClick={() => startEdit(m)}>
@@ -2109,6 +2277,7 @@ export default function App() {
                   <button className="attach-remove" onClick={() => setAttachment(null)}>×</button>
                 </div>
               )}
+              {voiceStatus && <div className={`voice-status${recording ? ' recording' : ''}`}>{voiceStatus}</div>}
               <div className="inputwrap">
                 <button className="inputwrap-attach" onClick={() => fileInputRef.current?.click()} title="附件">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
@@ -2119,6 +2288,15 @@ export default function App() {
                 <input ref={fileInputRef} type="file" accept="image/*,application/pdf,.txt,.doc,.docx" style={{ display: 'none' }} onChange={handleFileAttach} />
                 <textarea value={input} onChange={e => setInput(e.target.value)}
                   placeholder="说点什么……" rows={1} />
+                <button className={`voice-record-btn${recording ? ' recording' : ''}`} onClick={toggleRecording} disabled={transcribing} title={recording ? '停止录音' : '语音转文字'}>
+                  {recording ? (
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/>
+                    </svg>
+                  )}
+                </button>
                 <button onClick={send} disabled={loading}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>

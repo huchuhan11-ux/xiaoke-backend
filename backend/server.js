@@ -10,7 +10,7 @@ const nodemailer = require('nodemailer')
 const { Client: NotionClient } = require('@notionhq/client')
 const app = express()
 app.use(cors())
-app.use(express.json())
+app.use(express.json({ limit: '15mb' }))
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY)
 
 const PROJECT_ROOT = path.join(__dirname, '..')
@@ -267,6 +267,8 @@ const TRACE_INSTRUCTION = `
 【发邮件】需要帮小好发邮件时，输出 [EMAIL:收件人邮箱|邮件主题|邮件正文]。系统会自动发送，不要另外描述邮件内容。发完邮件后必须继续正常说话，不要空着，不要说"邮件已发"这种废话，就像正常聊天一样回应。
 
 【Notion记录】需要记录到 Notion 时，输出 [NOTION:页面标题|正文内容]。小克之家后端已经接好了 Notion Integration，不要让小好再去 Claude.ai、MCP 或新会话授权，也不要声称没有权限；只需输出标记，系统会自动创建页面。输出标记后还要正常回应，但不要重复正文。
+
+【英文语音】你可以在自然、亲密、适合直接说给小好听的时候偶尔发语音，尤其是她明确说“发语音”“说给我听”时。语音格式只能是 [VOICE:English sentence]，冒号后必须全部是自然英文，绝对不能有中文，不超过60个英文词。不要在普通文字里重复语音的英文内容；不适合发语音时正常发文字即可。
 
 【禁止输出XML】绝对不能在回复正文中输出任何 XML 标签、DSML、function_calls、tool_calls 或 invoke 格式。如需说明功能是否可用，用自然语言描述即可，不要用任何尖括号标签。
 
@@ -1036,18 +1038,20 @@ const WAKEUP_FALLBACK = "Baby, the sun's up and you're still in bed. Get up — 
 let wakeupCache = WAKEUP_FALLBACK
 let wakeupAudioCache = null
 
-async function synthesizeAudio(text) {
+async function synthesizeAudio(text, languageCode = null) {
+  const requestBody = {
+    text,
+    model_id: 'eleven_multilingual_v2',
+    voice_settings: { stability: 0.5, similarity_boost: 0.75, speed: 0.92 }
+  }
+  if (languageCode) requestBody.language_code = languageCode
   const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${process.env.ELEVENLABS_VOICE_ID}`, {
     method: 'POST',
     headers: {
       'xi-api-key': process.env.ELEVENLABS_API_KEY,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({
-      text,
-      model_id: 'eleven_multilingual_v2',
-      voice_settings: { stability: 0.5, similarity_boost: 0.75, speed: 0.92 }
-    })
+    body: JSON.stringify(requestBody)
   })
   if (!r.ok) throw new Error(`ElevenLabs ${r.status}: ${await r.text()}`)
   return Buffer.from(await r.arrayBuffer())
@@ -1065,7 +1069,7 @@ async function refreshWakeupCache() {
     )
     const tw = raw?.trim()
     if (tw && !tw.startsWith('API Error') && !tw.startsWith('Not logged') && !tw.includes('529') && !tw.includes('402')) wakeupCache = tw
-    wakeupAudioCache = await synthesizeAudio(wakeupCache)
+    wakeupAudioCache = await synthesizeAudio(wakeupCache, 'en')
   } catch (e) {
     console.log('WAKEUP GEN ERROR:', e.message)
   } finally {
@@ -1109,12 +1113,54 @@ app.get('/api/wakeup', (req, res) => {
 })
 
 app.post('/api/tts', async (req, res) => {
-  const { text } = req.body
+  const { text, language_code } = req.body
   if (!text) return res.status(400).json({ error: 'missing text' })
   try {
-    const audio = await synthesizeAudio(text.slice(0, 500))
+    const audio = await synthesizeAudio(text.slice(0, 500), language_code === 'en' ? 'en' : null)
     res.set('Content-Type', 'audio/mpeg')
     res.send(audio)
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.post('/api/stt', async (req, res) => {
+  const { audio, mime = 'audio/webm' } = req.body || {}
+  if (!audio) return res.status(400).json({ error: 'missing audio' })
+  try {
+    const raw = String(audio).replace(/^data:[^;]+;base64,/, '')
+    const bytes = Buffer.from(raw, 'base64')
+    if (!bytes.length || bytes.length > 12 * 1024 * 1024) return res.status(413).json({ error: 'audio too large' })
+    const ext = mime.includes('mp4') ? 'm4a' : mime.includes('ogg') ? 'ogg' : 'webm'
+    const form = new FormData()
+    form.append('model_id', 'scribe_v2')
+    form.append('file', new Blob([bytes], { type: mime }), `recording.${ext}`)
+    const response = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
+      method: 'POST',
+      headers: { 'xi-api-key': process.env.ELEVENLABS_API_KEY },
+      body: form
+    })
+    const result = await response.json()
+    if (!response.ok) {
+      const message = result?.detail?.message || result?.detail || result?.message || `ElevenLabs STT ${response.status}`
+      if (String(message).includes('speech_to_text')) return res.status(403).json({ error: 'ElevenLabs API Key 未开启 speech_to_text 权限' })
+      throw new Error(message)
+    }
+    res.json({ text: result.text || '', language_code: result.language_code || null })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.post('/api/translate', async (req, res) => {
+  const text = String(req.body?.text || '').trim()
+  if (!text) return res.status(400).json({ error: 'missing text' })
+  try {
+    const translation = await askClaude(
+      `把下面的英文准确、自然地翻译成中文，只输出译文，不要解释：\n\n${text.slice(0, 2000)}`,
+      '这是界面中的即时翻译功能。忠实翻译原意，语气自然。'
+    )
+    res.json({ translation: translation.trim() })
   } catch (e) {
     res.status(500).json({ error: e.message })
   }
