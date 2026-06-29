@@ -186,7 +186,7 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
   const refreshClaudeUsage = async () => {
     setUsageRefreshing(true)
     try {
-      const d = await fetch(`${API}/api/claude-usage?_=${Date.now()}`).then(r => r.json())
+      const d = await fetch(`${API}/api/claude-usage?refresh=1&_=${Date.now()}`, { cache: 'no-store' }).then(r => r.json())
       if (d?.ok) {
         setClaudeUsage(d)
         localStorage.setItem('claudeUsageCache', JSON.stringify(d))

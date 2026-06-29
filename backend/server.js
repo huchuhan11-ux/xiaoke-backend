@@ -105,9 +105,9 @@ function getWorkingProxy() {
 }
 
 
-async function fetchClaudeUsage() {
+async function fetchClaudeUsage(forceRefresh = false) {
   const now = Date.now()
-  if (claudeUsageCache && now - claudeUsageCacheAt < 5 * 60 * 1000) return claudeUsageCache
+  if (!forceRefresh && claudeUsageCache && now - claudeUsageCacheAt < 5 * 60 * 1000) return claudeUsageCache
   if (!claudeUsageCache) {
     try {
       const persisted = await getConfig('claudeUsageCache')
@@ -125,7 +125,10 @@ async function fetchClaudeUsage() {
       args.push('-H', `Authorization: Bearer ${accessToken}`, '-H', 'anthropic-beta: oauth-2025-04-20', 'https://api.anthropic.com/api/oauth/usage')
       return execFileSync('curl', args, { encoding: 'utf8', timeout: 10000 })
     }
-    const candidates = [...getProxyCandidates(), '']
+    // Only try proxy ports that are actually listening. macOS can retain a stale
+    // system-proxy entry after the VPN app disconnects; trying it only adds delay
+    // and makes a manual refresh look as if it succeeded from cache.
+    const candidates = [...getProxyCandidates().filter(proxyIsReachable), '']
     let lastData = null
     let lastError = null
     for (const proxy of candidates) {
@@ -153,7 +156,13 @@ async function fetchClaudeUsage() {
     }
     if (data.error) {
       // 失败时返回上次的好数据（带 stale 标记），避免图表消失
-      if (claudeUsageCache) return { ...claudeUsageCache, stale: true }
+      if (claudeUsageCache) return {
+        ...claudeUsageCache,
+        stale: true,
+        sync_error: getWorkingProxy()
+          ? (data.error?.message || 'Claude 用量服务暂时不可用')
+          : '优化云当前未连接；连接后会自动恢复实时同步'
+      }
       return { ok: false, error: data.error?.message || '用量同步暂时不可用' }
     }
     const KEYS = { five_hour: '5 小时', seven_day: '7 天总量', seven_day_sonnet: '7 天 Sonnet' }
@@ -174,7 +183,13 @@ async function fetchClaudeUsage() {
     }).then(null, () => {})
     return result
   } catch (e) {
-    if (claudeUsageCache) return { ...claudeUsageCache, stale: true }
+    if (claudeUsageCache) return {
+      ...claudeUsageCache,
+      stale: true,
+      sync_error: getWorkingProxy()
+        ? e.message
+        : '优化云当前未连接；连接后会自动恢复实时同步'
+    }
     return { ok: false, error: e.message }
   }
 }
@@ -745,7 +760,7 @@ app.get('/api/rate-limits', (req, res) => {
 })
 
 app.get('/api/claude-usage', async (req, res) => {
-  const result = await fetchClaudeUsage()
+  const result = await fetchClaudeUsage(req.query.refresh === '1')
   res.json(result)
 })
 
