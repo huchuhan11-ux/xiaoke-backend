@@ -187,6 +187,9 @@ async function fetchClaudeUsage(forceRefresh = false) {
       try {
         const data = JSON.parse(curlUsage(proxy))
         if (data?.five_hour || data?.seven_day) return data
+        // A rate-limit response means the OAuth request reached Anthropic
+        // successfully. Do not overwrite it with a later direct-connect error.
+        if (data?.error?.type === 'rate_limit_error') return data
         lastData = data
       } catch (e) { lastError = e }
     }
