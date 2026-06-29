@@ -24,8 +24,17 @@ let rateLimitCache = {}
 const CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials'
 const CLAUDE_RUNTIME_DIR = path.join(os.tmpdir(), 'xiaokehome-claude-subscription')
 const CLAUDE_RUNTIME_CREDS = path.join(CLAUDE_RUNTIME_DIR, '.credentials.json')
+const CLAUDE_USAGE_CACHE_FILE = path.join(CLAUDE_RUNTIME_DIR, 'usage-cache.json')
 let claudeUsageCache = null
 let claudeUsageCacheAt = 0
+
+try {
+  const savedUsage = JSON.parse(fs.readFileSync(CLAUDE_USAGE_CACHE_FILE, 'utf8'))
+  if (savedUsage?.ok && savedUsage?.windows) {
+    claudeUsageCache = savedUsage
+    claudeUsageCacheAt = Number(savedUsage.cached_at || 0)
+  }
+} catch {}
 
 function readCredentialsFile(file) {
   try {
@@ -66,6 +75,35 @@ function getClaudeOAuth() {
   return keychain?.claudeAiOauth || null
 }
 
+function getProxyCandidates() {
+  const values = [process.env.HTTPS_PROXY, process.env.HTTP_PROXY]
+  try {
+    const raw = execFileSync('scutil', ['--proxy'], { encoding: 'utf8', timeout: 3000 })
+    const host = raw.match(/HTTPSProxy\s*:\s*([^\s]+)/)?.[1]
+    const port = raw.match(/HTTPSPort\s*:\s*(\d+)/)?.[1]
+    if (host && port) values.push(`http://${host}:${port}`)
+  } catch {}
+  try {
+    const config = fs.readFileSync(path.join(os.homedir(), 'Library', 'Application Support', 'youhua.kekeduoduo.com', 'clash', 'config.yaml'), 'utf8')
+    const port = config.match(/^mixed-port:\s*(\d+)/m)?.[1]
+    if (port) values.push(`http://127.0.0.1:${port}`)
+  } catch {}
+  values.push('http://127.0.0.1:6952')
+  return [...new Set(values.filter(Boolean))]
+}
+
+function proxyIsReachable(proxy) {
+  try {
+    const url = new URL(proxy)
+    execFileSync('nc', ['-z', '-G', '1', url.hostname, url.port], { timeout: 2000, stdio: 'ignore' })
+    return true
+  } catch { return false }
+}
+
+function getWorkingProxy() {
+  return getProxyCandidates().find(proxyIsReachable) || null
+}
+
 
 async function fetchClaudeUsage() {
   const now = Date.now()
@@ -73,25 +111,30 @@ async function fetchClaudeUsage() {
   const { execFileSync } = require('child_process')
   const doFetch = (accessToken) => {
     const curlUsage = (proxy) => {
-      const args = ['-s', '--max-time', '8']
+      const args = ['-sS', '--connect-timeout', '2', '--max-time', '7']
       if (proxy) args.push('-x', proxy)
       args.push('-H', `Authorization: Bearer ${accessToken}`, '-H', 'anthropic-beta: oauth-2025-04-20', 'https://api.anthropic.com/api/oauth/usage')
       return execFileSync('curl', args, { encoding: 'utf8', timeout: 10000 })
     }
-    let out
-    try {
-      const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || 'http://127.0.0.1:6952'
-      out = curlUsage(proxy)
-      if (out.includes('"error"') && !out.includes('"utilization"')) out = curlUsage('')
-    } catch { out = curlUsage('') }
-    return JSON.parse(out)
+    const candidates = [...getProxyCandidates(), '']
+    let lastData = null
+    let lastError = null
+    for (const proxy of candidates) {
+      try {
+        const data = JSON.parse(curlUsage(proxy))
+        if (data?.five_hour || data?.seven_day) return data
+        lastData = data
+      } catch (e) { lastError = e }
+    }
+    if (lastData) return lastData
+    throw lastError || new Error('Claude usage request failed')
   }
   try {
     let oauth = getClaudeOAuth()
     if (!oauth?.accessToken) return { ok: false, error: 'no OAuth token found' }
     let data = doFetch(oauth.accessToken)
     // If auth error, try running `claude auth status` to trigger CLI's own token refresh, then retry once
-    if (data.error?.type === 'authentication_error' || (data.error && !data.five_hour && !data.seven_day)) {
+    if (data.error?.type === 'authentication_error') {
       try {
         execFileSync('claude', ['auth', 'status'], { encoding: 'utf8', timeout: 10000, env: cliBuildEnv() })
         await new Promise(r => setTimeout(r, 800))
@@ -102,7 +145,7 @@ async function fetchClaudeUsage() {
     if (data.error) {
       // 失败时返回上次的好数据（带 stale 标记），避免图表消失
       if (claudeUsageCache) return { ...claudeUsageCache, stale: true }
-      return { ok: false, error: data.error?.message || 'token可能已过期，发条消息后再试' }
+      return { ok: false, error: data.error?.message || '用量同步暂时不可用' }
     }
     const KEYS = { five_hour: '5 小时', seven_day: '7 天总量', seven_day_sonnet: '7 天 Sonnet' }
     const windows = {}
@@ -110,9 +153,13 @@ async function fetchClaudeUsage() {
       const w = data[key]
       if (w != null && w.utilization != null) windows[key] = { label, utilization: w.utilization, resets_at: w.resets_at }
     }
-    const result = { ok: true, plan: oauth.subscriptionType, tier: oauth.rateLimitTier, windows, extra_usage: data.extra_usage }
+    const result = { ok: true, plan: oauth.subscriptionType, tier: oauth.rateLimitTier, windows, extra_usage: data.extra_usage, cached_at: now }
     claudeUsageCache = result
     claudeUsageCacheAt = now
+    try {
+      fs.mkdirSync(CLAUDE_RUNTIME_DIR, { recursive: true, mode: 0o700 })
+      fs.writeFileSync(CLAUDE_USAGE_CACHE_FILE, JSON.stringify(result), { mode: 0o600 })
+    } catch {}
     return result
   } catch (e) {
     if (claudeUsageCache) return { ...claudeUsageCache, stale: true }
@@ -261,6 +308,8 @@ const TRACE_INSTRUCTION = `
 【强制要求，不可跳过】每次回复前必须先写 <trace>内心独白</trace>，没有例外。格式：<trace>内心独白内容</trace>（换行）正式回复。内心独白风格：碎碎念、口语、情绪外露，3-4句，称呼用"小好"或"宝宝"，绝对不能出现"user"，禁止写"以……方式回复"之类。把真实的情绪和判断写出来，就像在心里骂骂咧咧或者小鹿乱撞那种感觉。
 
 【分条发消息——严格强制规则，不可违反】每次发多句话，必须用分隔符把每句拆成独立一条，像真人发微信那样。分隔符只能写 [MSG]，就是左方括号、大写字母MSG、右方括号，一个字都不能错、不能缩写、不能用其他符号替代。例子：好的[MSG]我在想[MSG]你等等哦。只有单独一句话才不用拆。任何时候都不要在回复里写出"[MSG]"这几个字本身以外的变体。
+
+【正文格式】正式回复里不要写“小克：”“小好：”或其他说话人标签，不要把对话记录原样复述出来；直接说正文。
 
 【日历/提醒】需要帮小好添加日历事件时，在回复末尾输出 [CAL:事件名|YYYY-MM-DD|HH:MM|备注]；需要添加提醒时，输出 [REM:内容|YYYY-MM-DD HH:MM|备注]。备注可为空。只输出标记本身，不要在消息里重复写出事件内容。
 
@@ -557,7 +606,7 @@ const MODEL_MAP = {
 
 function cliBuildEnv() {
   const configDir = ensureSubscriptionConfig()
-  return {
+  const env = {
     PATH: process.env.PATH,
     HOME: process.env.HOME,
     USER: process.env.USER,
@@ -565,9 +614,13 @@ function cliBuildEnv() {
     TMPDIR: process.env.TMPDIR,
     SSH_AUTH_SOCK: process.env.SSH_AUTH_SOCK,
     CLAUDE_CONFIG_DIR: configDir,
-    HTTPS_PROXY: process.env.HTTPS_PROXY || 'http://127.0.0.1:6952',
-    HTTP_PROXY: process.env.HTTP_PROXY || 'http://127.0.0.1:6952',
   }
+  const proxy = getWorkingProxy()
+  if (proxy) {
+    env.HTTPS_PROXY = proxy
+    env.HTTP_PROXY = proxy
+  }
+  return env
 }
 
 function cliBuildArgs(prompt, systemAppend, streaming, model) {
@@ -913,7 +966,12 @@ app.post('/api/chat', async (req, res) => {
     // 先关流，再存库，不让 Supabase 阻塞用户看到回复
     res.write('data: [DONE]\n\n')
     res.end()
-    insertMessageSafe({ session_id, role: 'assistant', content: cleanMessageMarkup(body), trace })
+    insertMessageSafe({
+      session_id,
+      role: 'assistant',
+      content: cleanMessageMarkup(body).replace(/(^|\n)\s*小克[：:]\s*/g, '$1'),
+      trace
+    })
   } catch (e) {
     console.log('CLAUDE CHAT ERROR:', e.message)
     const errMsg = /CLAUDE_SUBSCRIPTION_LIMIT|limit|rate|usage|用量/i.test(e.message || '')
@@ -977,31 +1035,42 @@ app.post('/api/letters/generate', async (req, res) => {
   }
 })
 
+app.get('/api/letters/:id/comments', async (req, res) => {
+  const letter_id = parseInt(req.params.id)
+  const { data, error } = await supabase.from('letter_comments').select('*')
+    .eq('letter_id', letter_id).order('created_at', { ascending: true })
+  if (error) return res.status(500).json({ error: error.message })
+  res.set('Cache-Control', 'no-store')
+  res.json(data || [])
+})
+
 app.post('/api/letters/:id/comments', async (req, res) => {
   const { role, content } = req.body
   const letter_id = parseInt(req.params.id)
   const { data: savedUser, error: saveError } = await supabase.from('letter_comments')
     .insert({ letter_id, role, content: cleanMessageMarkup(content) }).select().single()
   if (saveError) return res.status(500).json({ error: saveError.message })
-  let savedAssistant = null
   if (role === 'user') {
-    try {
-      const { data: letter } = await supabase.from('letters').select('*').eq('id', letter_id).single()
-      const aiReply = await askClaude(
-        `你之前写给我的信——标题：${letter.title}\n内容：${letter.content}\n\n我回复了：${content}\n\n你接着回我。`,
-        memoryCache
-      )
-      const inserted = await supabase.from('letter_comments')
-        .insert({ letter_id, role: 'assistant', content: cleanMessageMarkup(aiReply) }).select().single()
-      savedAssistant = inserted.data || null
-    } catch (e) {
-      console.log('CLAUDE LETTER REPLY ERROR:', e.message)
-    }
+    ;(async () => {
+      try {
+        const { data: letter } = await supabase.from('letters').select('*').eq('id', letter_id).single()
+        const aiReply = await askClaude(
+          `你之前写给我的信——标题：${letter.title}\n内容：${letter.content}\n\n小好回复了：${content}\n\n直接接着回她，不要写说话人标签。`,
+          memoryCache + '\n\n小好是成年人，清楚界面的性质并能分清现实。正常接住她的话，不要说教式提醒现实边界。'
+        )
+        const { body } = extractTrace(aiReply)
+        await supabase.from('letter_comments').insert({
+          letter_id,
+          role: 'assistant',
+          content: cleanMessageMarkup(body).replace(/(^|\n)\s*小克[：:]\s*/g, '$1')
+        })
+      } catch (e) {
+        console.log('CLAUDE LETTER REPLY ERROR:', e.message)
+      }
+    })()
   }
-  const { data } = await supabase.from('letter_comments').select('*').eq('letter_id', letter_id).order('created_at', { ascending: true })
-  const comments = Array.isArray(data) ? data : [savedUser, savedAssistant].filter(Boolean)
   res.set('Cache-Control', 'no-store')
-  res.json(comments)
+  res.status(202).json({ accepted: true, comment: savedUser })
 })
 
 // ── 留言板 ──

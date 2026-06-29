@@ -89,14 +89,15 @@ function estimatedVoiceDuration(text = '') {
   return Math.max(1, Math.round(words / 2.35))
 }
 
-function displayMessageContent(content = '') {
-  return normalizeMessageText(content)
+function displayMessageContent(content = '', role = '') {
+  let text = normalizeMessageText(content)
     .replace(/<trace\b[^>]*>[\s\S]*?<\/trace>/gi, '')
     .replace(/<\/?trace\b[^>]*>/gi, '')
     .replace(/\[MSG?\]|\[M[A-Z]*G\]/g, '')
     .replace(/\[\s*(?:CAL|REM|ALARM|EMAIL|NOTION|VOICE)\s*:[^\]]*\]/gi, '')
     .replace(/\[[A-Z]{0,8}(?::[^\]]*)?$/, '')
-    .trim()
+  if (role === 'assistant') text = text.replace(/(^|\n)\s*小克[：:]\s*/g, '$1')
+  return text.trim()
 }
 
 function isEnglishContent(text = '') {
@@ -141,7 +142,11 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
   const [newLabel, setNewLabel] = useState('')
   const [newDesc, setNewDesc] = useState('')
   const [usageData, setUsageData] = useState(null)
-  const [claudeUsage, setClaudeUsage] = useState(null)
+  const [claudeUsage, setClaudeUsage] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('claudeUsageCache') || 'null') }
+    catch { return null }
+  })
+  const [usageRefreshing, setUsageRefreshing] = useState(false)
   const [locEnabled, setLocEnabled] = useState(() => localStorage.getItem('locEnabled') === '1')
   const [locStatus, setLocStatus] = useState(() => localStorage.getItem('locEnabled') === '1' ? 'granted' : null)
   const [locInput, setLocInput] = useState(() => localStorage.getItem('locText') || '')
@@ -178,12 +183,28 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
     } catch { setLocGpsErr(true) }
   }
 
+  const refreshClaudeUsage = async () => {
+    setUsageRefreshing(true)
+    try {
+      const d = await fetch(`${API}/api/claude-usage?_=${Date.now()}`).then(r => r.json())
+      if (d?.ok) {
+        setClaudeUsage(d)
+        localStorage.setItem('claudeUsageCache', JSON.stringify(d))
+      } else {
+        setClaudeUsage(prev => prev?.ok ? { ...prev, stale: true, sync_error: d?.error } : d)
+      }
+    } catch {
+      setClaudeUsage(prev => prev?.ok ? { ...prev, stale: true, sync_error: '网络暂时不可用' } : { ok: false, error: '网络暂时不可用' })
+    } finally { setUsageRefreshing(false) }
+  }
+
   useEffect(() => {
     if (subview !== 'usage') return
     fetch(`${API}/api/stats/summary`).then(r => r.json()).catch(() => ({}))
       .then(s => setUsageData({ count: s.count ?? '—' }))
-    fetch(`${API}/api/claude-usage`).then(r => r.json()).catch(() => null)
-      .then(d => setClaudeUsage(d))
+    refreshClaudeUsage()
+    const timer = setInterval(refreshClaudeUsage, 60 * 1000)
+    return () => clearInterval(timer)
   }, [subview])
 
   useEffect(() => {
@@ -272,6 +293,10 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
           <div className="su-section">
             <div className="su-plan-header">
               <span className="su-plan-label">Plan usage</span>
+              <div className="su-plan-sync">
+                <span>{usageRefreshing ? '同步中…' : claudeUsage.stale ? '最近同步' : '已同步'}</span>
+                <button onClick={refreshClaudeUsage} disabled={usageRefreshing} title="重新同步">↻</button>
+              </div>
             </div>
             {Object.keys(claudeUsage.windows || {}).length === 0
               ? <div className="su-reset-time" style={{ padding: '8px 0' }}>暂无用量数据（可能刚重置）</div>
@@ -305,11 +330,13 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
             {claudeUsage.extra_usage?.is_enabled && (
               <div className="su-extra">超量：${((claudeUsage.extra_usage.used_credits || 0) / 100).toFixed(2)} / ${((claudeUsage.extra_usage.monthly_limit || 0) / 100).toFixed(0)}</div>
             )}
+            {claudeUsage.stale && <div className="su-stale">实时同步暂时不可用，当前保留最近一次成功数据；后台会每分钟自动重试。</div>}
           </div>
         )}
         {claudeUsage && !claudeUsage.ok && (
           <div className="su-section">
-            <div className="su-err">当前 token 暂不支持读取用量，可在 claude.ai 查看</div>
+            <div className="su-err">Mac 当前无法连接用量服务。打开代理后点重新同步，成功数据之后会一直保留。</div>
+            <button className="su-retry-btn" onClick={refreshClaudeUsage} disabled={usageRefreshing}>{usageRefreshing ? '同步中…' : '重新同步'}</button>
           </div>
         )}
       </div>
@@ -692,6 +719,7 @@ function Heatmap({ dark }) {
 function JournalCard({ entry, expanded, onToggle, onReplySubmit }) {
   const [replyInput, setReplyInput] = useState('')
   const [replying, setReplying] = useState(false)
+  const [replyError, setReplyError] = useState('')
 
   const d = new Date(entry.created_at)
   const mo = String(d.getMonth()+1).padStart(2,'0')
@@ -720,15 +748,29 @@ function JournalCard({ entry, expanded, onToggle, onReplySubmit }) {
     onReplySubmit(entry.id, [...allComments, optimistic])
     setReplyInput('')
     setReplying(true)
+    setReplyError('')
+    const assistantCount = allComments.filter(c => c.role === 'assistant').length
     try {
       const res = await fetch(`${API}/api/letters/${entry.id}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role: 'user', content: text })
       })
-      const comments = await res.json()
-      if (res.ok && Array.isArray(comments)) onReplySubmit(entry.id, comments)
-    } catch {}
+      if (!res.ok) throw new Error('回信没有保存成功')
+      let received = false
+      for (let attempt = 0; attempt < 40; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 1500))
+        const comments = await fetch(`${API}/api/letters/${entry.id}/comments?_=${Date.now()}`)
+          .then(r => r.json())
+        if (!Array.isArray(comments)) continue
+        onReplySubmit(entry.id, comments)
+        if (comments.filter(c => c.role === 'assistant').length > assistantCount) {
+          received = true
+          break
+        }
+      }
+      if (!received) setReplyError('小克暂时没连上，连接优化云后再发一次。')
+    } catch (e) { setReplyError(e.message || '回信失败') }
     setReplying(false)
   }
 
@@ -761,13 +803,16 @@ function JournalCard({ entry, expanded, onToggle, onReplySubmit }) {
         </div>
       )}
       {expanded && entry._type === 'letter' && (
-        <div className="jcard-reply-row">
-          <input className="jcard-reply-input" value={replyInput}
-            onChange={e => setReplyInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') submitReply() }}
-            placeholder="回信…" />
-          <button className="jcard-reply-btn" onClick={submitReply} disabled={replying}>发送</button>
-        </div>
+        <>
+          {replyError && <div className="jcard-reply-error">{replyError}</div>}
+          <div className="jcard-reply-row">
+            <input className="jcard-reply-input" value={replyInput}
+              onChange={e => setReplyInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') submitReply() }}
+              placeholder="回信…" />
+            <button className="jcard-reply-btn" onClick={submitReply} disabled={replying}>{replying ? '等' : '发送'}</button>
+          </div>
+        </>
       )}
     </div>
   )
@@ -1571,6 +1616,8 @@ export default function App() {
   const [recording, setRecording] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
   const [voiceStatus, setVoiceStatus] = useState('')
+  const [showJumpLatest, setShowJumpLatest] = useState(false)
+  const isNearBottomRef = useRef(true)
   const mediaRecorderRef = useRef(null)
   const recognitionRef = useRef(null)
   const mediaStreamRef = useRef(null)
@@ -1897,15 +1944,19 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    isNearBottomRef.current = true
+    setShowJumpLatest(false)
     fetch(`${API}/api/messages?session_id=${sessionId}`)
       .then(r => r.json())
       .then(data => {
         if (data && data.length > 0) {
-          const LOAD_MSG_RE = /\[MSG?\]|\[M[A-Z]*G\]/
+          const LOAD_MSG_RE = /\[MSG?\]|\[M[A-Z]*G\]|\n+/
           const loaded = data.flatMap(m => {
             const quoted = parseQuotedMessage(m.content || '')
             const { clean, voices } = extractVoiceMarkers(quoted.content)
-            const parts = clean.split(LOAD_MSG_RE).map(p => p.trim()).filter(Boolean)
+            const parts = clean.split(LOAD_MSG_RE)
+              .flatMap(part => part.match(/[^。！？!?]+[。！？!?]+|[^。！？!?]+$/g) || [])
+              .map(p => p.trim()).filter(Boolean)
             const base = Number(m.id)
             const ts = m.created_at ? new Date(m.created_at).getTime() : null
             const textMessages = parts.map((p, i) => ({
@@ -1950,7 +2001,13 @@ export default function App() {
 
   useEffect(() => {
     const el = messagesRef.current
-    if (el) el.scrollTop = el.scrollHeight
+    if (!el) return
+    if (isNearBottomRef.current) {
+      el.scrollTop = el.scrollHeight
+      setShowJumpLatest(false)
+    } else {
+      setShowJumpLatest(true)
+    }
   }, [messages])
 
   useEffect(() => {
@@ -2029,6 +2086,22 @@ export default function App() {
     setEditingId(m.id)
   }
 
+  const handleMessagesScroll = () => {
+    const el = messagesRef.current
+    if (!el) return
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 110
+    isNearBottomRef.current = nearBottom
+    setShowJumpLatest(!nearBottom)
+  }
+
+  const jumpToLatest = () => {
+    const el = messagesRef.current
+    if (!el) return
+    isNearBottomRef.current = true
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    setShowJumpLatest(false)
+  }
+
   const startReply = m => {
     setReplyingTo({ role: m.role, content: normalizeMessageText(m.voiceText || m.content || '').slice(0, 240) })
     setTimeout(() => document.querySelector('.inputwrap textarea')?.focus(), 0)
@@ -2054,6 +2127,8 @@ export default function App() {
       attachment: att || undefined,
       ts: now
     }
+    isNearBottomRef.current = true
+    setShowJumpLatest(false)
     setMessages([...base, userMsg])
     setInput('')
     setReplyingTo(null)
@@ -2090,7 +2165,7 @@ export default function App() {
       let activeBubbleId = aiMsg.id
       let segmentContent = ''
       const responseBubbleIds = new Set([aiMsg.id])
-      const MSG_SPLIT = /\[MSG?\]|\[M[A-Z]*G\]|[。！？!?](?=\s*[^\s[])/
+      const MSG_SPLIT = /\[MSG?\]|\[M[A-Z]*G\]|\n+|[。！？!?](?=\s*[^\s[])/
       const ACTION_MARKER = /\[\s*(?:CAL|REM|ALARM|EMAIL|NOTION|VOICE)\s*:[^\]]*\]/gi
       const cleanDisplayedSegment = text => text
         .replace(/<br\s*\/?\s*>/gi, '\n')
@@ -2099,6 +2174,7 @@ export default function App() {
         .replace(/<\/?trace\b[^>]*>/gi, '')
         .replace(ACTION_MARKER, '')
         .replace(/\[[A-Z]{0,8}(?::[^\]]*)?$/, '')
+        .replace(/(^|\n)\s*小克[：:]\s*/g, '$1')
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
@@ -2148,7 +2224,7 @@ export default function App() {
       const { voices: voiceTexts } = extractVoiceMarkers(rawContent)
       const completeText = cleanDisplayedSegment(rawContent).trim()
       const completeParts = completeText
-        .split(/\[MSG?\]|\[M[A-Z]*G\]/)
+        .split(/\[MSG?\]|\[M[A-Z]*G\]|\n+/)
         .flatMap(part => part.match(/[^。！？!?]+[。！？!?]+|[^。！？!?]+$/g) || [])
         .map(part => part.trim())
         .filter(Boolean)
@@ -2314,7 +2390,7 @@ export default function App() {
               {bgImage && <button className="chat-bg-clear" onClick={() => { setBgImage(''); localStorage.removeItem('chatBg') }}>✕</button>}
               <input ref={bgInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleBgUpload} />
             </div>
-            <div className="messages" ref={messagesRef} style={bgImage ? { background: 'transparent' } : {}}>
+            <div className="messages" ref={messagesRef} onScroll={handleMessagesScroll} style={bgImage ? { background: 'transparent' } : {}}>
               {messages.map(m => (
                 (m.content?.trim() || m.voiceText || m.trace?.length || m.role === 'user') ? (
                 <div key={m.id} className="msg-group">
@@ -2359,7 +2435,7 @@ export default function App() {
                       )}
                       {m.attachment?.isImage && <img className="msg-img" src={m.attachment.data} alt={m.attachment.name} />}
                       {m.attachment && !m.attachment.isImage && <div className="msg-file-chip">📎 {m.attachment.name}</div>}
-                      {m.content && !m.content.startsWith('[图片:') && !m.content.startsWith('[文件:') ? displayMessageContent(m.content) : (!m.attachment ? displayMessageContent(m.content) : null)}
+                      {m.content && !m.content.startsWith('[图片:') && !m.content.startsWith('[文件:') ? displayMessageContent(m.content, m.role) : (!m.attachment ? displayMessageContent(m.content, m.role) : null)}
                       {m.translation && <div className="inline-translation">{m.translation}</div>}
                     </div>
                   </div>
@@ -2415,6 +2491,7 @@ export default function App() {
               )}
               <div ref={bottomRef} />
             </div>
+            {showJumpLatest && <button className="jump-latest-btn" onClick={jumpToLatest} title="回到最新消息">↓</button>}
             <div className="inputarea" style={bgImage ? { background: 'rgba(15,8,4,0.35)', backdropFilter: 'blur(24px)', borderTopColor: 'rgba(255,255,255,0.1)' } : {}}>
               {replyingTo && (
                 <div className="replying-banner">
