@@ -203,7 +203,9 @@ function Settings({ dark, setDark, chatModel, setChatModel }) {
     fetch(`${API}/api/stats/summary`).then(r => r.json()).catch(() => ({}))
       .then(s => setUsageData({ count: s.count ?? '—' }))
     refreshClaudeUsage()
-    const timer = setInterval(refreshClaudeUsage, 60 * 1000)
+    // Subscription chat events update usage immediately; this is only a quiet
+    // background reconciliation so the official usage endpoint is not rate-limited.
+    const timer = setInterval(refreshClaudeUsage, 15 * 60 * 1000)
     return () => clearInterval(timer)
   }, [subview])
 

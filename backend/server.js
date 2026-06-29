@@ -27,6 +27,7 @@ const CLAUDE_RUNTIME_CREDS = path.join(CLAUDE_RUNTIME_DIR, '.credentials.json')
 const CLAUDE_USAGE_CACHE_FILE = path.join(CLAUDE_RUNTIME_DIR, 'usage-cache.json')
 let claudeUsageCache = null
 let claudeUsageCacheAt = 0
+let usageFetchBlockedUntil = 0
 
 try {
   const savedUsage = JSON.parse(fs.readFileSync(CLAUDE_USAGE_CACHE_FILE, 'utf8'))
@@ -104,9 +105,60 @@ function getWorkingProxy() {
   return getProxyCandidates().find(proxyIsReachable) || null
 }
 
+function persistClaudeUsage(result) {
+  claudeUsageCache = result
+  claudeUsageCacheAt = Number(result.cached_at || Date.now())
+  try {
+    fs.mkdirSync(CLAUDE_RUNTIME_DIR, { recursive: true, mode: 0o700 })
+    fs.writeFileSync(CLAUDE_USAGE_CACHE_FILE, JSON.stringify(result), { mode: 0o600 })
+  } catch {}
+  supabase.from('user_config').upsert({
+    key: 'claudeUsageCache', value: result, updated_at: new Date().toISOString()
+  }).then(null, () => {})
+}
+
+function updateUsageFromRateLimitInfo(info) {
+  const type = String(info?.rateLimitType || info?.rate_limit_type || '').toLowerCase()
+  const key = type.includes('five') ? 'five_hour'
+    : type.includes('seven') && type.includes('sonnet') ? 'seven_day_sonnet'
+      : type.includes('seven') || type.includes('week') ? 'seven_day' : null
+  const raw = info?.utilization ?? info?.utilizationPercentage ?? info?.utilization_percentage ?? info?.percentage
+  const numeric = Number(raw)
+  if (!key || !Number.isFinite(numeric)) return
+  const utilization = numeric > 0 && numeric <= 1 ? numeric * 100 : numeric
+  const resetRaw = info?.resetsAt ?? info?.resets_at ?? info?.resetAt ?? info?.reset_at
+  let resetsAt = resetRaw
+  if (typeof resetRaw === 'number') resetsAt = new Date(resetRaw < 1e12 ? resetRaw * 1000 : resetRaw).toISOString()
+  const labels = { five_hour: '5 小时', seven_day: '7 天总量', seven_day_sonnet: '7 天 Sonnet' }
+  const now = Date.now()
+  const result = {
+    ...(claudeUsageCache?.ok ? claudeUsageCache : {}),
+    ok: true,
+    plan: claudeUsageCache?.plan || 'subscription',
+    stale: false,
+    manual: false,
+    source: 'claude_subscription_event',
+    windows: {
+      ...(claudeUsageCache?.windows || {}),
+      [key]: {
+        ...(claudeUsageCache?.windows?.[key] || {}),
+        label: labels[key],
+        utilization: Math.max(0, Math.min(100, utilization)),
+        ...(resetsAt ? { resets_at: resetsAt } : {})
+      }
+    },
+    cached_at: now
+  }
+  delete result.sync_error
+  persistClaudeUsage(result)
+}
+
 
 async function fetchClaudeUsage(forceRefresh = false) {
   const now = Date.now()
+  if (now < usageFetchBlockedUntil && claudeUsageCache) {
+    return { ...claudeUsageCache, stale: true, sync_error: 'Claude 用量接口正在限流，聊天产生的新用量仍会实时同步' }
+  }
   if (!forceRefresh && claudeUsageCache && now - claudeUsageCacheAt < 5 * 60 * 1000) return claudeUsageCache
   if (!claudeUsageCache) {
     try {
@@ -155,6 +207,7 @@ async function fetchClaudeUsage(forceRefresh = false) {
       } catch {}
     }
     if (data.error) {
+      if (data.error?.type === 'rate_limit_error') usageFetchBlockedUntil = now + 45 * 60 * 1000
       // 失败时返回上次的好数据（带 stale 标记），避免图表消失
       if (claudeUsageCache) return {
         ...claudeUsageCache,
@@ -172,15 +225,7 @@ async function fetchClaudeUsage(forceRefresh = false) {
       if (w != null && w.utilization != null) windows[key] = { label, utilization: w.utilization, resets_at: w.resets_at }
     }
     const result = { ok: true, plan: oauth.subscriptionType, tier: oauth.rateLimitTier, windows, extra_usage: data.extra_usage, cached_at: now }
-    claudeUsageCache = result
-    claudeUsageCacheAt = now
-    try {
-      fs.mkdirSync(CLAUDE_RUNTIME_DIR, { recursive: true, mode: 0o700 })
-      fs.writeFileSync(CLAUDE_USAGE_CACHE_FILE, JSON.stringify(result), { mode: 0o600 })
-    } catch {}
-    supabase.from('user_config').upsert({
-      key: 'claudeUsageCache', value: result, updated_at: new Date().toISOString()
-    }).then(null, () => {})
+    persistClaudeUsage(result)
     return result
   } catch (e) {
     if (claudeUsageCache) return {
@@ -703,6 +748,7 @@ async function streamClaude(prompt, systemAppend, onDelta, model) {
         } else if (ev.type === 'rate_limit_event' && ev.rate_limit_info) {
           const info = ev.rate_limit_info
           rateLimitCache[info.rateLimitType] = { ...info, capturedAt: Date.now() }
+          updateUsageFromRateLimitInfo(info)
         }
       } catch {}
     }
