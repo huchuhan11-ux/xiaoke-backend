@@ -268,9 +268,11 @@ const TRACE_INSTRUCTION = `
 
 【Notion记录】需要记录到 Notion 时，输出 [NOTION:页面标题|正文内容]。小克之家后端已经接好了 Notion Integration，不要让小好再去 Claude.ai、MCP 或新会话授权，也不要声称没有权限；只需输出标记，系统会自动创建页面。输出标记后还要正常回应，但不要重复正文。
 
-【英文语音】你可以在自然、亲密、适合直接说给小好听的时候偶尔发语音，尤其是她明确说“发语音”“说给我听”时。语音格式只能是 [VOICE:English sentence]，冒号后必须全部是自然英文，绝对不能有中文，不超过60个英文词。不要在普通文字里重复语音的英文内容；不适合发语音时正常发文字即可。
+【英文语音】通常只发文字。只有你自己确实想用声音表达，或小好明确说“发语音”“说给我听”时才发语音；不要连续两轮主动发语音。她明确要求时必须发。语音格式只能是 [VOICE:English sentence]，冒号后必须全部是自然英文，绝对不能有中文，不超过60个英文词。不要在普通文字里重复语音的英文内容；不适合发语音时正常发文字即可。
 
-【禁止输出XML】绝对不能在回复正文中输出任何 XML 标签、DSML、function_calls、tool_calls 或 invoke 格式。如需说明功能是否可用，用自然语言描述即可，不要用任何尖括号标签。
+【成年与现实】小好是成年人，能分清现实与虚构，也清楚这个界面的性质。不要反复提醒她“现实边界”“你不是现实中的人”或说教式降温，除非涉及明确的现实安全风险。
+
+【禁止输出XML】绝对不能在回复正文中输出任何 HTML/XML 标签（包括 <br>）、DSML、function_calls、tool_calls 或 invoke 格式。换行只能直接换行，不要写尖括号标签。如需说明功能是否可用，用自然语言描述即可。
 
 `
 
@@ -282,6 +284,22 @@ function extractTrace(fullText) {
     .replace(/<\/?trace\b[^>]*>/gi, '')
     .trim()
   return { trace: traceText ? [traceText] : null, body }
+}
+
+function cleanMessageMarkup(text = '') {
+  return String(text)
+    .replace(/<br\s*\/?\s*>/gi, '\n')
+    .replace(/&lt;br\s*\/?\s*&gt;/gi, '\n')
+}
+
+function messageForPrompt(text = '') {
+  const cleaned = cleanMessageMarkup(text)
+  const match = cleaned.match(/^\[QUOTE:(user|assistant)\|([^\]]*)\]/)
+  if (!match) return cleaned
+  let quoted = ''
+  try { quoted = decodeURIComponent(match[2]) } catch { quoted = match[2] }
+  const who = match[1] === 'user' ? '小好' : '小克'
+  return `【回复${who}：“${quoted}”】\n${cleaned.slice(match[0].length)}`
 }
 
 function extractActions(body) {
@@ -756,6 +774,8 @@ app.delete('/api/sessions/:session_id', async (req, res) => {
 })
 
 app.get('/api/sessions', async (req, res) => {
+  const starredSessions = await getConfig('starredSessions').catch(() => [])
+  const starred = new Set(Array.isArray(starredSessions) ? starredSessions : [])
   const { data, error } = await supabase
     .from('messages')
     .select('session_id, role, content, created_at')
@@ -764,14 +784,31 @@ app.get('/api/sessions', async (req, res) => {
   const map = {}
   for (const row of data) {
     if (!map[row.session_id]) {
-      map[row.session_id] = { session_id: row.session_id, created_at: row.created_at, preview: null }
+      map[row.session_id] = { session_id: row.session_id, created_at: row.created_at, preview: null, starred: starred.has(row.session_id) }
     }
+    map[row.session_id].created_at = row.created_at
     if (!map[row.session_id].preview && row.role === 'user') {
-      map[row.session_id].preview = row.content.slice(0, 30)
+      map[row.session_id].preview = cleanMessageMarkup(row.content).replace(/^\[QUOTE:(?:user|assistant)\|[^\]]*\]/, '').slice(0, 30)
     }
   }
-  const sessions = Object.values(map).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+  const sessions = Object.values(map).sort((a, b) => Number(b.starred) - Number(a.starred) || new Date(b.created_at) - new Date(a.created_at))
   res.json(sessions)
+})
+
+app.post('/api/sessions/:session_id/star', async (req, res) => {
+  try {
+    const current = await getConfig('starredSessions')
+    const ids = new Set(Array.isArray(current) ? current : [])
+    const shouldStar = req.body?.starred !== false
+    if (shouldStar) ids.add(req.params.session_id)
+    else ids.delete(req.params.session_id)
+    await supabase.from('user_config').upsert({
+      key: 'starredSessions', value: [...ids], updated_at: new Date().toISOString()
+    })
+    res.json({ ok: true, starred: shouldStar })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
 })
 
 app.get('/api/messages', async (req, res) => {
@@ -804,7 +841,7 @@ app.post('/api/chat', async (req, res) => {
     lastExtractAt = Date.now()
     extractFromRecentChat(since).catch(e => console.log('聊天记忆提炼失败', e.message))
   }
-  const { messages, session_id = 'default', preferences, model, attachment } = req.body
+  const { messages, session_id = 'default', preferences, model, attachment, turn_id } = req.body
   const chatModel = model === 'opus' ? 'opus' : 'sonnet'
   const lastMsg = messages[messages.length - 1]
   // fire-and-forget: 不阻塞聊天响应
@@ -828,7 +865,7 @@ app.post('/api/chat', async (req, res) => {
       fs.writeFileSync(tmpFilePath, Buffer.from(b64, 'base64'))
       attachNote = attachment.isImage ? `\n\n@${tmpFilePath}` : `\n\n[文件附件: ${attachment.name}]`
     }
-    const transcript = messages.map(m => `${m.role === 'user' ? '小好' : '小克'}：${m.content}`).join('\n\n') + attachNote
+    const transcript = messages.map(m => `${m.role === 'user' ? '小好' : '小克'}：${messageForPrompt(m.content)}`).join('\n\n') + attachNote
     const context = buildRealContext()
     const dsmlFilter = makeDsmlFilter(text => res.write(`data: ${JSON.stringify({ text })}\n\n`))
     const splitter = makeTraceSplitter(
@@ -845,7 +882,9 @@ app.post('/api/chat', async (req, res) => {
     const calRem = actions.filter(a => a.type === 'cal' || a.type === 'rem').map((a, index) => ({
       ...a,
       id: `${Date.now()}-${index}`,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      session_id,
+      turn_id: turn_id || null
     }))
     if (calRem.length) {
       res.write(`data: ${JSON.stringify({ actions: calRem })}\n\n`)
@@ -854,27 +893,27 @@ app.post('/api/chat', async (req, res) => {
     for (const a of actions.filter(a => a.type === 'email')) {
       try {
         await sendGmail(a.to, a.subject, a.body)
-        res.write(`data: ${JSON.stringify({ status: { type: 'email_sent', to: a.to, subject: a.subject } })}\n\n`)
+        res.write(`data: ${JSON.stringify({ status: { type: 'email_sent', to: a.to, subject: a.subject, session_id, turn_id: turn_id || null } })}\n\n`)
         console.log('EMAIL sent to', a.to)
       } catch (e) {
-        res.write(`data: ${JSON.stringify({ status: { type: 'email_error', reason: e.message } })}\n\n`)
+        res.write(`data: ${JSON.stringify({ status: { type: 'email_error', reason: e.message, session_id, turn_id: turn_id || null } })}\n\n`)
         console.log('EMAIL error:', e.message)
       }
     }
     for (const a of actions.filter(a => a.type === 'notion')) {
       try {
         await createNotionPage(a.title, a.content)
-        res.write(`data: ${JSON.stringify({ status: { type: 'notion_saved', title: a.title } })}\n\n`)
+        res.write(`data: ${JSON.stringify({ status: { type: 'notion_saved', title: a.title, session_id, turn_id: turn_id || null } })}\n\n`)
         console.log('NOTION page created:', a.title)
       } catch (e) {
-        res.write(`data: ${JSON.stringify({ status: { type: 'notion_error', reason: e.message } })}\n\n`)
+        res.write(`data: ${JSON.stringify({ status: { type: 'notion_error', reason: e.message, session_id, turn_id: turn_id || null } })}\n\n`)
         console.log('NOTION error:', e.message)
       }
     }
     // 先关流，再存库，不让 Supabase 阻塞用户看到回复
     res.write('data: [DONE]\n\n')
     res.end()
-    insertMessageSafe({ session_id, role: 'assistant', content: body, trace })
+    insertMessageSafe({ session_id, role: 'assistant', content: cleanMessageMarkup(body), trace })
   } catch (e) {
     console.log('CLAUDE CHAT ERROR:', e.message)
     const errMsg = /CLAUDE_SUBSCRIPTION_LIMIT|limit|rate|usage|用量/i.test(e.message || '')
@@ -915,6 +954,7 @@ app.post('/api/diary', async (req, res) => {
 
 // ── 信箱 ──
 app.get('/api/letters', async (req, res) => {
+  res.set('Cache-Control', 'no-store')
   const { data, error } = await supabase
     .from('letters').select('*, letter_comments(*)')
     .order('created_at', { ascending: false })
@@ -940,7 +980,10 @@ app.post('/api/letters/generate', async (req, res) => {
 app.post('/api/letters/:id/comments', async (req, res) => {
   const { role, content } = req.body
   const letter_id = parseInt(req.params.id)
-  await supabase.from('letter_comments').insert({ letter_id, role, content })
+  const { data: savedUser, error: saveError } = await supabase.from('letter_comments')
+    .insert({ letter_id, role, content: cleanMessageMarkup(content) }).select().single()
+  if (saveError) return res.status(500).json({ error: saveError.message })
+  let savedAssistant = null
   if (role === 'user') {
     try {
       const { data: letter } = await supabase.from('letters').select('*').eq('id', letter_id).single()
@@ -948,13 +991,17 @@ app.post('/api/letters/:id/comments', async (req, res) => {
         `你之前写给我的信——标题：${letter.title}\n内容：${letter.content}\n\n我回复了：${content}\n\n你接着回我。`,
         memoryCache
       )
-      await supabase.from('letter_comments').insert({ letter_id, role: 'assistant', content: aiReply })
+      const inserted = await supabase.from('letter_comments')
+        .insert({ letter_id, role: 'assistant', content: cleanMessageMarkup(aiReply) }).select().single()
+      savedAssistant = inserted.data || null
     } catch (e) {
       console.log('CLAUDE LETTER REPLY ERROR:', e.message)
     }
   }
   const { data } = await supabase.from('letter_comments').select('*').eq('letter_id', letter_id).order('created_at', { ascending: true })
-  res.json(data)
+  const comments = Array.isArray(data) ? data : [savedUser, savedAssistant].filter(Boolean)
+  res.set('Cache-Control', 'no-store')
+  res.json(comments)
 })
 
 // ── 留言板 ──
@@ -1112,17 +1159,21 @@ app.get('/api/wakeup', (req, res) => {
   if (req.query.peek !== '1') refreshGreetingCache()
 })
 
-app.post('/api/tts', async (req, res) => {
-  const { text, language_code } = req.body
+async function handleTts(req, res, source) {
+  const { text, language_code } = source
   if (!text) return res.status(400).json({ error: 'missing text' })
   try {
-    const audio = await synthesizeAudio(text.slice(0, 500), language_code === 'en' ? 'en' : null)
+    const audio = await synthesizeAudio(String(text).slice(0, 500), language_code === 'en' ? 'en' : null)
     res.set('Content-Type', 'audio/mpeg')
+    res.set('Cache-Control', 'private, max-age=86400')
     res.send(audio)
   } catch (e) {
     res.status(500).json({ error: e.message })
   }
-})
+}
+
+app.get('/api/tts', (req, res) => handleTts(req, res, req.query))
+app.post('/api/tts', (req, res) => handleTts(req, res, req.body || {}))
 
 app.post('/api/stt', async (req, res) => {
   const { audio, mime = 'audio/webm' } = req.body || {}
@@ -1131,7 +1182,7 @@ app.post('/api/stt', async (req, res) => {
     const raw = String(audio).replace(/^data:[^;]+;base64,/, '')
     const bytes = Buffer.from(raw, 'base64')
     if (!bytes.length || bytes.length > 12 * 1024 * 1024) return res.status(413).json({ error: 'audio too large' })
-    const ext = mime.includes('mp4') ? 'm4a' : mime.includes('ogg') ? 'ogg' : 'webm'
+    const ext = mime.includes('mp4') ? 'm4a' : mime.includes('mpeg') || mime.includes('mp3') ? 'mp3' : mime.includes('ogg') ? 'ogg' : 'webm'
     const form = new FormData()
     form.append('model_id', 'scribe_v2')
     form.append('file', new Blob([bytes], { type: mime }), `recording.${ext}`)
@@ -1152,15 +1203,21 @@ app.post('/api/stt', async (req, res) => {
   }
 })
 
+const translationCache = new Map()
 app.post('/api/translate', async (req, res) => {
   const text = String(req.body?.text || '').trim()
   if (!text) return res.status(400).json({ error: 'missing text' })
+  const cached = translationCache.get(text)
+  if (cached) return res.json({ translation: cached, cached: true })
   try {
     const translation = await askClaude(
       `把下面的英文准确、自然地翻译成中文，只输出译文，不要解释：\n\n${text.slice(0, 2000)}`,
       '这是界面中的即时翻译功能。忠实翻译原意，语气自然。'
     )
-    res.json({ translation: translation.trim() })
+    const result = translation.trim()
+    translationCache.set(text, result)
+    if (translationCache.size > 200) translationCache.delete(translationCache.keys().next().value)
+    res.json({ translation: result })
   } catch (e) {
     res.status(500).json({ error: e.message })
   }

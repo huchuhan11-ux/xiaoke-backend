@@ -47,12 +47,56 @@ const TAB_ICON = {
 }
 
 const DEFAULT_PREFS = { nickname: '', style: 'default', styleCustom: '', extra: '', persona: '', traceStyle: '' }
+function normalizeMessageText(content = '') {
+  return String(content)
+    .replace(/<br\s*\/?\s*>/gi, '\n')
+    .replace(/&lt;br\s*\/?\s*&gt;/gi, '\n')
+}
+
+function serializeQuote(replyTo, content) {
+  if (!replyTo?.content) return content
+  return `[QUOTE:${replyTo.role}|${encodeURIComponent(replyTo.content.slice(0, 240))}]${content}`
+}
+
+function parseQuotedMessage(content = '') {
+  const normalized = normalizeMessageText(content)
+  const match = normalized.match(/^\[QUOTE:(user|assistant)\|([^\]]*)\]/)
+  if (!match) return { content: normalized, replyTo: null }
+  let quoted = match[2]
+  try { quoted = decodeURIComponent(quoted) } catch {}
+  return {
+    content: normalized.slice(match[0].length),
+    replyTo: { role: match[1], content: quoted }
+  }
+}
+
 function extractVoiceMarkers(content = '') {
-  const voiceMarker = /\[VOICE:([^\]]+)\]/gi
-  const voices = [...content.matchAll(voiceMarker)]
+  const normalized = normalizeMessageText(content)
+  const voiceMarker = /\[\s*VOICE\s*:\s*([^\]]+?)\s*\]/gi
+  const voices = [...normalized.matchAll(voiceMarker)]
     .map(match => match[1].trim())
     .filter(text => text && !/[\u3400-\u9fff]/.test(text))
-  return { voices, clean: content.replace(/\[VOICE:([^\]]+)\]/gi, '').trim() }
+  return { voices, clean: normalized.replace(voiceMarker, '').trim() }
+}
+
+function formatDuration(seconds) {
+  const safe = Math.max(0, Math.round(Number(seconds) || 0))
+  return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, '0')}`
+}
+
+function estimatedVoiceDuration(text = '') {
+  const words = text.trim().split(/\s+/).filter(Boolean).length
+  return Math.max(1, Math.round(words / 2.35))
+}
+
+function displayMessageContent(content = '') {
+  return normalizeMessageText(content)
+    .replace(/<trace\b[^>]*>[\s\S]*?<\/trace>/gi, '')
+    .replace(/<\/?trace\b[^>]*>/gi, '')
+    .replace(/\[MSG?\]|\[M[A-Z]*G\]/g, '')
+    .replace(/\[\s*(?:CAL|REM|ALARM|EMAIL|NOTION|VOICE)\s*:[^\]]*\]/gi, '')
+    .replace(/\[[A-Z]{0,8}(?::[^\]]*)?$/, '')
+    .trim()
 }
 
 function isEnglishContent(text = '') {
@@ -665,16 +709,25 @@ function JournalCard({ entry, expanded, onToggle, onReplySubmit }) {
 
   const submitReply = async () => {
     if (!replyInput.trim() || replying) return
+    const text = replyInput.trim()
+    const optimistic = {
+      id: `local-${Date.now()}`,
+      letter_id: entry.id,
+      role: 'user',
+      content: text,
+      created_at: new Date().toISOString()
+    }
+    onReplySubmit(entry.id, [...allComments, optimistic])
+    setReplyInput('')
     setReplying(true)
     try {
       const res = await fetch(`${API}/api/letters/${entry.id}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: 'user', content: replyInput })
+        body: JSON.stringify({ role: 'user', content: text })
       })
       const comments = await res.json()
-      onReplySubmit(entry.id, comments)
-      setReplyInput('')
+      if (res.ok && Array.isArray(comments)) onReplySubmit(entry.id, comments)
     } catch {}
     setReplying(false)
   }
@@ -1504,12 +1557,14 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [thinkingVisible, setThinkingVisible] = useState(false)
   const [pendingActions, setPendingActions] = useState([])
+  const messagesDataRef = useRef(messages)
   const thinkStartRef = useRef(null)
   const lastChatActivityRef = useRef(Date.now())
   const [bgImage, setBgImage] = useState(() => localStorage.getItem('chatBg') || '')
   const [openTraces, setOpenTraces] = useState(() => new Set())
   const [traceModal, setTraceModal] = useState(null)
   const [editingId, setEditingId] = useState(null)
+  const [replyingTo, setReplyingTo] = useState(null)
   const [chatModel, setChatModel] = useState(() => localStorage.getItem('chatModel') === 'opus' ? 'opus' : 'sonnet')
   const [playingId, setPlayingId] = useState(null)
   const audioRef = useRef(null)
@@ -1521,39 +1576,50 @@ export default function App() {
   const mediaStreamRef = useRef(null)
   const audioChunksRef = useRef([])
 
-  const mergePendingActions = incoming => {
+  const mergePendingActions = (incoming, anchorId = null) => {
     if (!Array.isArray(incoming) || incoming.length === 0) return
     setPendingActions(prev => {
       const ids = new Set(prev.map(item => item.id).filter(Boolean))
-      return [...prev, ...incoming.filter(item => !item.id || !ids.has(item.id))]
+      const fresh = incoming
+        .filter(item => !item.id || !ids.has(item.id))
+        .map(item => ({ ...item, anchorId: item.anchorId || anchorId }))
+      return [...prev, ...fresh]
     })
   }
+
+  useEffect(() => { messagesDataRef.current = messages }, [messages])
 
   const acknowledgeAction = id => {
     if (id) fetch(`${API}/api/pending-actions/${encodeURIComponent(id)}`, { method: 'DELETE', keepalive: true }).catch(() => {})
   }
 
-  const playTTS = async (msgId, content, englishOnly = false) => {
+  const playTTS = (msgId, content, englishOnly = false) => {
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null }
     if (playingId === msgId) { setPlayingId(null); return }
     setPlayingId(msgId)
-    try {
-      const res = await fetch(`${API}/api/tts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: content, language_code: englishOnly ? 'en' : undefined })
-      })
-      if (!res.ok) throw new Error()
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const audio = new Audio(url)
-      audioRef.current = audio
-      audio.play()
-      audio.onended = () => { setPlayingId(null); URL.revokeObjectURL(url); audioRef.current = null }
-    } catch { setPlayingId(null) }
+    const params = new URLSearchParams({ text: content })
+    if (englishOnly) params.set('language_code', 'en')
+    const audio = new Audio(`${API}/api/tts?${params}`)
+    audio.preload = 'auto'
+    audio.playsInline = true
+    audioRef.current = audio
+    audio.onloadedmetadata = () => {
+      if (Number.isFinite(audio.duration)) {
+        setMessages(prev => prev.map(m => m.id === msgId ? { ...m, voiceDuration: Math.round(audio.duration) } : m))
+      }
+    }
+    audio.onended = () => { setPlayingId(null); audioRef.current = null }
+    audio.onerror = () => { setPlayingId(null); audioRef.current = null }
+    audio.play().catch(() => setPlayingId(null))
   }
 
   const translateMessage = async (msgId, text) => {
+    const cacheKey = `xkTranslation:${text}`
+    const cached = localStorage.getItem(cacheKey)
+    if (cached) {
+      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, translation: cached } : m))
+      return
+    }
     setMessages(prev => prev.map(m => m.id === msgId ? { ...m, translation: '翻译中…' } : m))
     try {
       const response = await fetch(`${API}/api/translate`, {
@@ -1561,10 +1627,16 @@ export default function App() {
       })
       const data = await response.json()
       if (!response.ok) throw new Error()
-      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, translation: data.translation || '暂无译文' } : m))
+      const translation = data.translation || '暂无译文'
+      try { localStorage.setItem(cacheKey, translation) } catch {}
+      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, translation } : m))
     } catch {
       setMessages(prev => prev.map(m => m.id === msgId ? { ...m, translation: '翻译失败，稍后再试' } : m))
     }
+  }
+
+  const toggleVoiceTranscript = msgId => {
+    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, showTranscript: !m.showTranscript } : m))
   }
 
   const stopRecording = () => {
@@ -1702,6 +1774,16 @@ export default function App() {
     setDeletingSessionId(null)
   }
 
+  const toggleSessionStar = async (session, event) => {
+    event.stopPropagation()
+    const starred = !session.starred
+    setSessions(prev => prev.map(s => s.session_id === session.session_id ? { ...s, starred } : s)
+      .sort((a, b) => Number(b.starred) - Number(a.starred) || new Date(b.created_at) - new Date(a.created_at)))
+    await fetch(`${API}/api/sessions/${encodeURIComponent(session.session_id)}/star`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ starred })
+    }).catch(() => {})
+  }
+
   const onSessionPressStart = (id) => {
     longPressTimer.current = setTimeout(() => setDeletingSessionId(id), 500)
   }
@@ -1782,7 +1864,10 @@ export default function App() {
   useEffect(() => {
     const poll = () => {
       if (document.visibilityState !== 'visible') return
-      fetch(`${API}/api/pending-actions?_=${Date.now()}`).then(r => r.json()).then(mergePendingActions).catch(() => {})
+      fetch(`${API}/api/pending-actions?_=${Date.now()}`).then(r => r.json()).then(incoming => {
+        const latestAssistant = [...messagesDataRef.current].reverse().find(m => m.role === 'assistant')
+        mergePendingActions(incoming, latestAssistant?.id || null)
+      }).catch(() => {})
     }
     poll()
     const tick = setInterval(poll, 5000)
@@ -1818,21 +1903,31 @@ export default function App() {
         if (data && data.length > 0) {
           const LOAD_MSG_RE = /\[MSG?\]|\[M[A-Z]*G\]/
           const loaded = data.flatMap(m => {
-            const { clean, voices } = extractVoiceMarkers(m.content || '')
+            const quoted = parseQuotedMessage(m.content || '')
+            const { clean, voices } = extractVoiceMarkers(quoted.content)
             const parts = clean.split(LOAD_MSG_RE).map(p => p.trim()).filter(Boolean)
             const base = Number(m.id)
             const ts = m.created_at ? new Date(m.created_at).getTime() : null
-            const textMessages = parts.map((p, i) => ({ id: base + i, role: m.role, content: p, trace: i === 0 ? (m.trace || null) : undefined, ts }))
+            const textMessages = parts.map((p, i) => ({
+              id: base + i,
+              role: m.role,
+              content: normalizeMessageText(p),
+              replyTo: i === 0 ? quoted.replyTo : null,
+              trace: i === 0 ? (m.trace || null) : undefined,
+              ts
+            }))
             const voiceMessages = voices.map((voiceText, i) => ({
               id: `${m.id}-voice-${i}`,
               role: m.role,
               content: '',
               voiceText,
+              voiceDuration: estimatedVoiceDuration(voiceText),
+              replyTo: parts.length === 0 && i === 0 ? quoted.replyTo : null,
               trace: parts.length === 0 && i === 0 ? (m.trace || null) : undefined,
               ts
             }))
             if (textMessages.length || voiceMessages.length) return [...textMessages, ...voiceMessages]
-            return [{ id: m.id, role: m.role, content: clean || m.content, trace: m.trace || null, ts }]
+            return [{ id: m.id, role: m.role, content: normalizeMessageText(clean || quoted.content), replyTo: quoted.replyTo, trace: m.trace || null, ts }]
           })
           // compute thinkSecs from timestamp gap between user msg and assistant reply
           const withSecs = loaded.map((msg, idx) => {
@@ -1857,6 +1952,16 @@ export default function App() {
     const el = messagesRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [messages])
+
+  useEffect(() => {
+    const latestAssistant = [...messages].reverse().find(m => m.role === 'assistant')
+    if (!latestAssistant) return
+    setPendingActions(prev => prev.map(action =>
+      !action.anchorId && action.session_id === sessionId
+        ? { ...action, anchorId: latestAssistant.id }
+        : action
+    ))
+  }, [messages, sessionId])
 
   useEffect(() => {
     if (view === 'chat') {
@@ -1924,6 +2029,11 @@ export default function App() {
     setEditingId(m.id)
   }
 
+  const startReply = m => {
+    setReplyingTo({ role: m.role, content: normalizeMessageText(m.voiceText || m.content || '').slice(0, 240) })
+    setTimeout(() => document.querySelector('.inputwrap textarea')?.focus(), 0)
+  }
+
   const send = async () => {
     if ((!input.trim() && !attachment) || loading) return
     let base = messages
@@ -1934,10 +2044,19 @@ export default function App() {
       setEditingId(null)
     }
     const now = Date.now()
+    const turnId = `turn-${sessionId}-${now}`
     const att = attachment
-    const userMsg = { id: now, role: 'user', content: input || (att ? `[${att.isImage ? '图片' : '文件'}: ${att.name}]` : ''), attachment: att || undefined, ts: now }
+    const userMsg = {
+      id: now,
+      role: 'user',
+      content: normalizeMessageText(input || (att ? `[${att.isImage ? '图片' : '文件'}: ${att.name}]` : '')),
+      replyTo: replyingTo,
+      attachment: att || undefined,
+      ts: now
+    }
     setMessages([...base, userMsg])
     setInput('')
+    setReplyingTo(null)
     setAttachment(null)
     setLoading(true)
     setThinkingVisible(true)
@@ -1945,7 +2064,7 @@ export default function App() {
     lastChatActivityRef.current = Date.now()
     const history = [...base, userMsg]
       .filter(m => m.role === 'user' || m.role === 'assistant')
-      .map(m => ({ role: m.role, content: m.content }))
+      .map(m => ({ role: m.role, content: serializeQuote(m.replyTo, m.voiceText || m.content) }))
     const currentPrefs = loadPrefs()
     const currentStyles = loadStyles()
     const selStyle = currentStyles.find(s => s.id === currentPrefs.style)
@@ -1959,12 +2078,12 @@ export default function App() {
       const res = await fetch(`${API}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: history, session_id: sessionId, preferences: prefsWithDesc, model: chatModel, attachment: att ? { name: att.name, mime: att.mime, isImage: att.isImage, data: att.data } : null }),
+        body: JSON.stringify({ messages: history, session_id: sessionId, turn_id: turnId, preferences: prefsWithDesc, model: chatModel, attachment: att ? { name: att.name, mime: att.mime, isImage: att.isImage, data: att.data } : null }),
         signal: abortCtrl.signal
       })
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
-      let aiMsg = { id: Date.now(), role: 'assistant', content: '' }
+      let aiMsg = { id: now + 1, role: 'assistant', content: '' }
       let rawContent = ''
       setMessages(prev => [...prev, aiMsg])
       let buffer = ''
@@ -1972,8 +2091,10 @@ export default function App() {
       let segmentContent = ''
       const responseBubbleIds = new Set([aiMsg.id])
       const MSG_SPLIT = /\[MSG?\]|\[M[A-Z]*G\]|[。！？!?](?=\s*[^\s[])/
-      const ACTION_MARKER = /\[(?:CAL|REM|ALARM|EMAIL|NOTION|VOICE):[^\]]*\]/g
+      const ACTION_MARKER = /\[\s*(?:CAL|REM|ALARM|EMAIL|NOTION|VOICE)\s*:[^\]]*\]/gi
       const cleanDisplayedSegment = text => text
+        .replace(/<br\s*\/?\s*>/gi, '\n')
+        .replace(/&lt;br\s*\/?\s*&gt;/gi, '\n')
         .replace(/<trace\b[^>]*>[\s\S]*?<\/trace>/gi, '')
         .replace(/<\/?trace\b[^>]*>/gi, '')
         .replace(ACTION_MARKER, '')
@@ -1993,9 +2114,9 @@ export default function App() {
                 aiMsg = { ...aiMsg, trace: payload.trace }
                 setMessages(prev => prev.map(m => m.id === aiMsg.id ? { ...m, trace: payload.trace } : m))
               } else if (payload.status) {
-                setPendingActions(prev => [...prev, { ...payload.status, type: 'status', statusType: payload.status.type }])
+                mergePendingActions([{ ...payload.status, type: 'status', statusType: payload.status.type }], aiMsg.id)
               } else if (payload.actions) {
-                mergePendingActions(payload.actions)
+                mergePendingActions(payload.actions, aiMsg.id)
               } else if (payload.text) {
                 setThinkingVisible(false)
                 rawContent += payload.text
@@ -2044,11 +2165,13 @@ export default function App() {
         role: 'assistant',
         content: '',
         voiceText,
+        voiceDuration: estimatedVoiceDuration(voiceText),
         trace: finalizedText.length === 0 && index === 0 ? aiMsg.trace : undefined,
         thinkSecs: finalizedText.length === 0 && index === 0 && secs != null ? secs : undefined,
         ts: Date.now()
       }))
       const finalized = [...finalizedText, ...finalizedVoices]
+      const finalAnchorId = finalized[0]?.id || null
       setMessages(prev => {
         const firstResponseIndex = prev.findIndex(msg => responseBubbleIds.has(msg.id))
         const kept = prev.filter(msg => !responseBubbleIds.has(msg.id))
@@ -2056,6 +2179,9 @@ export default function App() {
         const insertAt = firstResponseIndex < 0 ? kept.length : Math.min(firstResponseIndex, kept.length)
         return [...kept.slice(0, insertAt), ...finalized, ...kept.slice(insertAt)]
       })
+      if (finalAnchorId && finalAnchorId !== aiMsg.id) {
+        setPendingActions(prev => prev.map(a => a.anchorId === aiMsg.id ? { ...a, anchorId: finalAnchorId } : a))
+      }
     } catch (e) {
       if (e?.name === 'AbortError') {
         setMessages(prev => [...prev, { id: Date.now(), role: 'assistant', content: '等太久没反应，网络可能卡了，待会儿再试。' }])
@@ -2068,6 +2194,57 @@ export default function App() {
       setLoading(false)
       loadSessions()
     }
+  }
+
+  const renderActionCards = actions => {
+    if (!actions.length) return null
+    return (
+      <div className="action-cards">
+        {actions.map((a, i) => {
+          const dismiss = () => {
+            acknowledgeAction(a.id)
+            setPendingActions(prev => prev.filter(item => item !== a && (!a.id || item.id !== a.id)))
+          }
+          if (a.type === 'status') {
+            const icon = a.statusType === 'email_sent' ? '✉️' : a.statusType === 'notion_saved' ? '📓' : '⚠️'
+            const label = a.statusType === 'email_sent' ? `邮件已发送至 ${a.to}` : a.statusType === 'notion_saved' ? '已记录到 Notion' : a.statusType === 'email_error' ? '邮件发送失败' : 'Notion 写入失败'
+            return (
+              <div key={a.id || `${a.statusType}-${i}`} className="action-card">
+                <span className="action-card-icon">{icon}</span>
+                <div className="action-card-body">
+                  <div className="action-card-title">{label}</div>
+                  {(a.subject || a.title || a.reason) && <div className="action-card-sub">{a.subject || a.title || a.reason}</div>}
+                </div>
+                <button className="action-card-close" onClick={dismiss}>✕</button>
+              </div>
+            )
+          }
+          const isCal = a.type === 'cal'
+          const openICS = () => {
+            acknowledgeAction(a.id)
+            setPendingActions(prev => prev.filter(item => item !== a && (!a.id || item.id !== a.id)))
+            if (isCal) {
+              const params = new URLSearchParams({ title: a.title, date: a.date || '', time: a.time || '', duration: '60', notes: a.notes || '' })
+              window.location.href = `${API}/api/ios/calendar?${params}`
+            } else {
+              const params = new URLSearchParams({ title: a.title, notes: a.notes || '', due: a.due || '' })
+              window.location.href = `${API}/api/ios/reminder?${params}`
+            }
+          }
+          return (
+            <div key={a.id || `${a.type}-${i}`} className="action-card">
+              <span className="action-card-icon">{isCal ? '📅' : '⏰'}</span>
+              <div className="action-card-body">
+                <div className="action-card-title">{a.title}</div>
+                <div className="action-card-sub">{isCal ? `${a.date} ${a.time || ''}` : a.due}</div>
+              </div>
+              <button className="action-card-btn" onClick={openICS}>{isCal ? '加入日历' : '添加提醒'}</button>
+              <button className="action-card-close" onClick={dismiss}>✕</button>
+            </div>
+          )
+        })}
+      </div>
+    )
   }
 
   return (
@@ -2104,6 +2281,14 @@ export default function App() {
                       <div className="session-date">{new Date(s.created_at).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}</div>
                       <div className="session-preview">{s.preview || '（空对话）'}</div>
                     </div>
+                    <button
+                      className={`session-star-btn${s.starred ? ' starred' : ''}`}
+                      title={s.starred ? '取消置顶' : '星标置顶'}
+                      onPointerDown={e => e.stopPropagation()}
+                      onTouchStart={e => e.stopPropagation()}
+                      onMouseDown={e => e.stopPropagation()}
+                      onClick={e => toggleSessionStar(s, e)}
+                    >{s.starred ? '★' : '☆'}</button>
                     {deletingSessionId === s.session_id && (
                       <button className="session-delete-btn" onTouchStart={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); deleteSession(s.session_id) }}>删除</button>
                     )}
@@ -2140,7 +2325,13 @@ export default function App() {
                     </button>
                   )}
                   {m.voiceText && (
-                    <div className="msg assistant">
+                    <div className="msg assistant voice-msg">
+                      {m.replyTo && (
+                        <div className="reply-quote">
+                          <span>{m.replyTo.role === 'user' ? '小好' : '小克'}</span>
+                          {m.replyTo.content}
+                        </div>
+                      )}
                       <div className="voice-bubble">
                         <button className={`voice-play-btn${playingId === m.id ? ' playing' : ''}`} onClick={() => playTTS(m.id, m.voiceText, true)} title="播放英文语音">
                           {playingId === m.id ? 'Ⅱ' : '▶'}
@@ -2148,18 +2339,27 @@ export default function App() {
                         <div className="voice-wave" aria-hidden="true">
                           {[5,9,14,8,17,12,7,15,19,10,6,13,18,11,7,15,9,5].map((height, i) => <span key={i} style={{ height }} />)}
                         </div>
-                        <span className="voice-lang">EN</span>
+                        <span className="voice-duration">{formatDuration(m.voiceDuration || estimatedVoiceDuration(m.voiceText))}</span>
+                        <button className={`voice-transcript-btn${m.showTranscript ? ' active' : ''}`} onClick={() => toggleVoiceTranscript(m.id)}>文</button>
                         <button className="voice-translate-btn" onClick={() => translateMessage(m.id, m.voiceText)}>译</button>
+                        <button className="voice-reply-btn" title="引用回复" onClick={() => startReply(m)}>↩</button>
                       </div>
+                      {m.showTranscript && <div className="voice-transcript">{m.voiceText}</div>}
                       {m.translation && <div className="voice-translation">{m.translation}</div>}
                     </div>
                   )}
                   {(m.content?.trim() || m.attachment) && <>
                   <div className={`msg ${m.role}`}>
                     <div className={`bubble ${bgImage ? 'bubble-bg' : ''}`}>
+                      {m.replyTo && (
+                        <div className="reply-quote">
+                          <span>{m.replyTo.role === 'user' ? '小好' : '小克'}</span>
+                          {m.replyTo.content}
+                        </div>
+                      )}
                       {m.attachment?.isImage && <img className="msg-img" src={m.attachment.data} alt={m.attachment.name} />}
                       {m.attachment && !m.attachment.isImage && <div className="msg-file-chip">📎 {m.attachment.name}</div>}
-                      {m.content && !m.content.startsWith('[图片:') && !m.content.startsWith('[文件:') ? m.content.replace(/<trace\b[^>]*>[\s\S]*?<\/trace>/gi, '').replace(/<\/?trace\b[^>]*>/gi, '').replace(/\[MSG?\]|\[M[A-Z]*G\]/g, '').replace(/\[(?:CAL|REM|ALARM|EMAIL|NOTION|VOICE):[^\]]*\]/g, '').replace(/\[[A-Z]{0,8}(?::[^\]]*)?$/, '').trim() : (!m.attachment ? m.content : null)}
+                      {m.content && !m.content.startsWith('[图片:') && !m.content.startsWith('[文件:') ? displayMessageContent(m.content) : (!m.attachment ? displayMessageContent(m.content) : null)}
                       {m.translation && <div className="inline-translation">{m.translation}</div>}
                     </div>
                   </div>
@@ -2167,6 +2367,7 @@ export default function App() {
                     <div className={`msg-meta ${m.role}`}>
                       {m.ts ? <span className="msg-time">{fmtTime(m.ts)}</span> : <span />}
                       <div className="msg-acts">
+                        <button className="msg-act" title="引用回复" onClick={() => startReply(m)}>↩</button>
                         <button className="msg-act" title="复制" onClick={() => copyMsg(m.content)}>
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
@@ -2198,58 +2399,11 @@ export default function App() {
                     </div>
                   )}
                   </>}
+                  {renderActionCards(pendingActions.filter(a => a.anchorId === m.id))}
                 </div>
                 ) : null
               ))}
-              {pendingActions.length > 0 && (
-                <div className="action-cards">
-                  {pendingActions.map((a, i) => {
-                    const dismiss = () => {
-                      acknowledgeAction(a.id)
-                      setPendingActions(prev => prev.filter((_, j) => j !== i))
-                    }
-                    if (a.type === 'status') {
-                      const icon = a.statusType === 'email_sent' ? '✉️' : a.statusType === 'notion_saved' ? '📓' : '⚠️'
-                      const label = a.statusType === 'email_sent' ? `邮件已发送至 ${a.to}` : a.statusType === 'notion_saved' ? `已记录到 Notion` : a.statusType === 'email_error' ? `邮件发送失败` : `Notion 写入失败`
-                      return (
-                        <div key={i} className="action-card">
-                          <span className="action-card-icon">{icon}</span>
-                          <div className="action-card-body">
-                            <div className="action-card-title">{label}</div>
-                            {(a.subject || a.title || a.reason) && <div className="action-card-sub">{a.subject || a.title || a.reason}</div>}
-                          </div>
-                          <button className="action-card-close" onClick={dismiss}>✕</button>
-                        </div>
-                      )
-                    }
-                    const isCal = a.type === 'cal'
-                    const openICS = () => {
-                      acknowledgeAction(a.id)
-                      setPendingActions(prev => prev.filter((_, j) => j !== i))
-                      if (isCal) {
-                        const params = new URLSearchParams({ title: a.title, date: a.date || '', time: a.time || '', duration: '60', notes: a.notes || '' })
-                        window.location.href = `${API}/api/ios/calendar?${params}`
-                      } else {
-                        const params = new URLSearchParams({ title: a.title, notes: a.notes || '', due: a.due || '' })
-                        window.location.href = `${API}/api/ios/reminder?${params}`
-                      }
-                    }
-                    return (
-                      <div key={i} className="action-card">
-                        <span className="action-card-icon">{isCal ? '📅' : '⏰'}</span>
-                        <div className="action-card-body">
-                          <div className="action-card-title">{a.title}</div>
-                          <div className="action-card-sub">{isCal ? `${a.date} ${a.time || ''}` : a.due}</div>
-                        </div>
-                        <button className="action-card-btn" onClick={openICS}>
-                          {isCal ? '加入日历' : '添加提醒'}
-                        </button>
-                        <button className="action-card-close" onClick={dismiss}>✕</button>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+              {renderActionCards(pendingActions.filter(a => !a.anchorId))}
               {thinkingVisible && (
                 <div className="msg-group">
                   <div className="thinking-card">
@@ -2262,6 +2416,12 @@ export default function App() {
               <div ref={bottomRef} />
             </div>
             <div className="inputarea" style={bgImage ? { background: 'rgba(15,8,4,0.35)', backdropFilter: 'blur(24px)', borderTopColor: 'rgba(255,255,255,0.1)' } : {}}>
+              {replyingTo && (
+                <div className="replying-banner">
+                  <div><span>回复{replyingTo.role === 'user' ? '小好' : '小克'}</span>{replyingTo.content}</div>
+                  <button onClick={() => setReplyingTo(null)}>×</button>
+                </div>
+              )}
               {editingId && (
                 <div className="editing-banner">
                   <span>正在编辑这条消息，发送后会替换原内容</span>
