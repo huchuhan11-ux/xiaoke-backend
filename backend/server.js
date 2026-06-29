@@ -108,6 +108,15 @@ function getWorkingProxy() {
 async function fetchClaudeUsage() {
   const now = Date.now()
   if (claudeUsageCache && now - claudeUsageCacheAt < 5 * 60 * 1000) return claudeUsageCache
+  if (!claudeUsageCache) {
+    try {
+      const persisted = await getConfig('claudeUsageCache')
+      if (persisted?.ok && persisted?.windows) {
+        claudeUsageCache = persisted
+        claudeUsageCacheAt = Number(persisted.cached_at || 0)
+      }
+    } catch {}
+  }
   const { execFileSync } = require('child_process')
   const doFetch = (accessToken) => {
     const curlUsage = (proxy) => {
@@ -160,6 +169,9 @@ async function fetchClaudeUsage() {
       fs.mkdirSync(CLAUDE_RUNTIME_DIR, { recursive: true, mode: 0o700 })
       fs.writeFileSync(CLAUDE_USAGE_CACHE_FILE, JSON.stringify(result), { mode: 0o600 })
     } catch {}
+    supabase.from('user_config').upsert({
+      key: 'claudeUsageCache', value: result, updated_at: new Date().toISOString()
+    }).then(null, () => {})
     return result
   } catch (e) {
     if (claudeUsageCache) return { ...claudeUsageCache, stale: true }
